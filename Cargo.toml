@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-duckdb-extension-framework = { git = "https://github.com/ocadaruma/duckdb-extension-framework.git", rev = "469abe7" }
+duckdb-extension-framework = { git = "https://github.com/ocadaruma/duckdb-extension-framework.git", rev = "659460a" }
+jfrs = { git = "https://github.com/ocadaruma/jfrs.git", rev = "0c4cb94" }
 
 [lib]
 name = "jfr_extension"

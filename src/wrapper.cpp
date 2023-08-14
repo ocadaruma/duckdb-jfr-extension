@@ -28,8 +28,8 @@ DUCKDB_EXTENSION_API void jfr_init(DatabaseInstance &db) {
 }
 
 // Bridge functions
-void jfr_create_view(Connection &connection, const char* tablename) {
-    connection.TableFunction("jfr_scan", {Value(tablename)})
+void jfr_create_view(Connection &connection, const char* filename, const char* tablename) {
+    connection.TableFunction("jfr_scan", {Value(filename), Value(tablename)})
             ->CreateView(tablename, true, false);
 }
 }
