@@ -4,7 +4,7 @@ use std::fmt::format;
 use std::fs::File;
 use std::ptr::null_mut;
 use duckdb_extension_framework::{check, Connection, Database, DataChunk, LogicalType, LogicalTypeId, malloc_struct, Vector};
-use duckdb_extension_framework::duckly::{duckdb_bind_info, duckdb_column_logical_type, duckdb_connect, duckdb_connection, duckdb_data_chunk, duckdb_data_chunk_get_vector, duckdb_destroy_logical_type, duckdb_free, duckdb_function_info, duckdb_init_info, duckdb_library_version, duckdb_list_vector_get_child, duckdb_list_vector_reserve, duckdb_struct_type_child_count, duckdb_struct_type_child_name, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_validity};
+use duckdb_extension_framework::duckly::{duckdb_bind_info, duckdb_column_logical_type, duckdb_connect, duckdb_connection, duckdb_data_chunk, duckdb_data_chunk_get_vector, duckdb_destroy_logical_type, duckdb_free, duckdb_function_info, duckdb_init_info, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_struct_type_child_count, duckdb_struct_type_child_name, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_validity};
 use duckdb_extension_framework::table_functions::{BindInfo, FunctionInfo, InitInfo, TableFunction};
 use jfrs::reader::event::Accessor;
 use jfrs::reader::{Chunk, JfrReader};
@@ -12,7 +12,7 @@ use jfrs::reader::type_descriptor::{TypeDescriptor, TypePool};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 
 #[no_mangle]
-pub unsafe extern "C" fn jfr_init_rust(db: *mut c_void) {
+pub unsafe extern "C" fn jfr_init(db: *mut c_void) {
     init(db).expect("init failed");
     // let db = Database::from_cpp_duckdb(db);
     // let conn = db.connect().unwrap();
@@ -39,7 +39,7 @@ unsafe fn init(db: *mut c_void) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[no_mangle]
-pub extern "C" fn jfr_version_rust() -> *const c_char {
+pub extern "C" fn jfr_version() -> *const c_char {
     unsafe { duckdb_library_version() }
 }
 
@@ -99,39 +99,44 @@ unsafe extern "C" fn jfr_scan_bind(info: duckdb_bind_info) {
     info.add_result_column("stackTrace", LogicalType::new_struct_type(&[
         ("truncated", LogicalType::new(LogicalTypeId::Boolean)),
         ("frames", LogicalType::new_list_type(&LogicalType::new_struct_type(&[
-            ("lineNumber", LogicalType::new(LogicalTypeId::Integer)),
-            ("method", LogicalType::new_struct_type(&[
-                ("type", LogicalType::new_struct_type(&[
-                    ("classLoader", LogicalType::new_struct_type(&[
-                        ("name", LogicalType::new_struct_type(&[
-                            ("string", LogicalType::new(LogicalTypeId::Varchar)),
-                        ])),
-                    ])),
-                    ("package", LogicalType::new_struct_type(&[
-                        ("name", LogicalType::new_struct_type(&[
-                            ("string", LogicalType::new(LogicalTypeId::Varchar)),
-                        ])),
-                    ])),
-                    ("modifiers", LogicalType::new(LogicalTypeId::Integer)),
-                    ("name", LogicalType::new_struct_type(&[
-                        ("string", LogicalType::new(LogicalTypeId::Varchar)),
-                    ])),
-                ])),
-                ("descriptor", LogicalType::new_struct_type(&[
-                    ("string", LogicalType::new(LogicalTypeId::Varchar)),
-                ])),
-                ("hidden", LogicalType::new(LogicalTypeId::Boolean)),
-                ("name", LogicalType::new_struct_type(&[
-                    ("string", LogicalType::new(LogicalTypeId::Varchar)),
-                ])),
-                ("modifiers", LogicalType::new(LogicalTypeId::Integer)),
-            ])),
-            ("bytecodeIndex", LogicalType::new(LogicalTypeId::Integer)),
-            ("type", LogicalType::new_struct_type(&[
-                ("description", LogicalType::new(LogicalTypeId::Varchar)),
-            ])),
-        ]
-        ))),
+            ("foo", LogicalType::new_list_type(&LogicalType::new(LogicalTypeId::Integer))),
+            ("bar", LogicalType::new(LogicalTypeId::Double)),
+        ]))),
+
+        // ("frames", LogicalType::new_list_type(&LogicalType::new_struct_type(&[
+        //     ("lineNumber", LogicalType::new(LogicalTypeId::Integer)),
+        //     ("method", LogicalType::new_struct_type(&[
+        //         ("type", LogicalType::new_struct_type(&[
+        //             ("classLoader", LogicalType::new_struct_type(&[
+        //                 ("name", LogicalType::new_struct_type(&[
+        //                     ("string", LogicalType::new(LogicalTypeId::Varchar)),
+        //                 ])),
+        //             ])),
+        //             ("package", LogicalType::new_struct_type(&[
+        //                 ("name", LogicalType::new_struct_type(&[
+        //                     ("string", LogicalType::new(LogicalTypeId::Varchar)),
+        //                 ])),
+        //             ])),
+        //             ("modifiers", LogicalType::new(LogicalTypeId::Integer)),
+        //             ("name", LogicalType::new_struct_type(&[
+        //                 ("string", LogicalType::new(LogicalTypeId::Varchar)),
+        //             ])),
+        //         ])),
+        //         ("descriptor", LogicalType::new_struct_type(&[
+        //             ("string", LogicalType::new(LogicalTypeId::Varchar)),
+        //         ])),
+        //         ("hidden", LogicalType::new(LogicalTypeId::Boolean)),
+        //         ("name", LogicalType::new_struct_type(&[
+        //             ("string", LogicalType::new(LogicalTypeId::Varchar)),
+        //         ])),
+        //         ("modifiers", LogicalType::new(LogicalTypeId::Integer)),
+        //     ])),
+        //     ("bytecodeIndex", LogicalType::new(LogicalTypeId::Integer)),
+        //     ("type", LogicalType::new_struct_type(&[
+        //         ("description", LogicalType::new(LogicalTypeId::Varchar)),
+        //     ])),
+        // ]
+        // ))),
     ]));
 
     let bind_data = malloc_struct::<JfrBindData>();
@@ -237,6 +242,11 @@ unsafe extern "C" fn jfr_scan_init(info: duckdb_init_info) {
 //     output.set_size(count as u64);
 // }
 
+struct Sub {
+    foo: Vec<i32>,
+    bar: f64,
+}
+
 unsafe extern "C" fn jfr_scan_func(
     info: duckdb_function_info,
     output_raw: duckdb_data_chunk
@@ -256,7 +266,14 @@ unsafe extern "C" fn jfr_scan_func(
     let tablename = CStr::from_ptr((*bind_data).tablename);
     let tablename_rs = tablename.to_str().unwrap();
 
-    let row_count = 10;
+    let row_count = 3;
+    let sub_vector = vec![
+        vec![Sub{foo: vec![1,2,3], bar: 42.1}, Sub{foo: vec![], bar: 0.0001}],
+        vec![],
+        vec![Sub{foo: vec![99], bar: 10000000.5}],
+    ];
+    let mut child_offset = 0;
+    let mut child_offset_2 = 0;
     for row in 0..row_count {
         output.get_vector::<u64>(0).get_data_as_slice()[row] = 1691936000000 + row as u64;
         let vector = duckdb_data_chunk_get_vector(output_raw, 1);
@@ -267,7 +284,39 @@ unsafe extern "C" fn jfr_scan_func(
 
         // frames
         let v = duckdb_struct_vector_get_child(vector, 1);
-        set_null(v, row);
+
+        let sub = &sub_vector[row];
+
+        duckdb_list_vector_reserve(v, 5000);
+        let list_v = duckdb_list_vector_get_child(v);
+
+        for i in 0..sub.len() {
+            let subb = &sub[i];
+
+            // foo >>
+            let foo_v = duckdb_struct_vector_get_child(list_v, 0);
+            duckdb_list_vector_reserve(foo_v, 5000);
+            let foo_list_v = duckdb_list_vector_get_child(foo_v);
+            for ii in 0..subb.foo.len() {
+                Vector::<i32>::from(foo_list_v).get_data_as_slice()[child_offset_2 + ii] = subb.foo[ii];
+            }
+            Vector::<duckdb_list_entry>::from(foo_v).get_data_as_slice()[child_offset + i] = duckdb_list_entry {
+                length: subb.foo.len() as u64,
+                offset: child_offset_2 as u64,
+            };
+            child_offset_2 += subb.foo.len();
+            duckdb_list_vector_set_size(foo_v, (child_offset_2 + subb.foo.len()) as u64);
+            // << foo
+
+            let bar_v = duckdb_struct_vector_get_child(list_v, 1);
+            Vector::<f64>::from(bar_v).get_data_as_slice()[child_offset + i] = subb.bar;
+        }
+        Vector::<duckdb_list_entry>::from(v).get_data_as_slice()[row] = duckdb_list_entry {
+            length: sub.len() as u64,
+            offset: child_offset as u64,
+        };
+        child_offset += sub.len();
+        duckdb_list_vector_set_size(v, (child_offset + sub.len()) as u64);
 
         // stackTrace (parent)
         // set_null(vector, row);
@@ -296,7 +345,11 @@ unsafe fn populate_column(
                 Primitive::Long(v) => assign(vector, row_idx, *v),
                 Primitive::Float(v) => assign(vector, row_idx, *v),
                 Primitive::Double(v) => assign(vector, row_idx, *v),
-                Primitive::Character(v) => assign(vector, row_idx, *v),
+                Primitive::Character(v) => {
+                    let cs = CString::new(v.to_string()).unwrap();
+                    Vector::<()>::from(vector).assign_string_element_len(
+                        row_idx as u64, cs.as_ptr(), v.to_string().len() as u64);
+                }
                 Primitive::Boolean(v) => assign(vector, row_idx, *v),
                 Primitive::Short(v) => assign(vector, row_idx, *v),
                 Primitive::Byte(v) => assign(vector, row_idx, *v),

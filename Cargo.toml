@@ -11,4 +11,4 @@ jfrs = { git = "https://github.com/ocadaruma/jfrs.git", rev = "0c4cb94" }
 
 [lib]
 name = "jfr_extension"
-crate-type = ["staticlib"]
+crate-type = ["cdylib"]
