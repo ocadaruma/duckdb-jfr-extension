@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::fmt::format;
 use std::fs::File;
+use std::mem::forget;
 use std::ptr::{null_mut, slice_from_raw_parts_mut};
 use std::slice::from_raw_parts_mut;
 use duckdb_extension_framework::{check, Connection, Database, DataChunk, LogicalType, LogicalTypeId, malloc_struct, Vector};
-use duckdb_extension_framework::duckly::{duckdb_bind_info, duckdb_column_logical_type, duckdb_connect, duckdb_connection, duckdb_data_chunk, duckdb_data_chunk_get_vector, duckdb_destroy_logical_type, duckdb_free, duckdb_function_info, duckdb_get_type_id, duckdb_init_info, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_struct_type_child_count, duckdb_struct_type_child_name, duckdb_struct_vector_get_child, DUCKDB_TYPE_DUCKDB_TYPE_STRUCT, duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_data, duckdb_vector_get_validity};
+use duckdb_extension_framework::duckly::{duckdb_bind_info, duckdb_column_logical_type, duckdb_connect, duckdb_connection, duckdb_data_chunk, duckdb_data_chunk_get_vector, duckdb_destroy_logical_type, duckdb_free, duckdb_function_info, duckdb_get_type_id, duckdb_init_info, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_struct_type_child_count, duckdb_struct_type_child_name, duckdb_struct_vector_get_child, DUCKDB_TYPE_DUCKDB_TYPE_STRUCT, duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_data, duckdb_vector_get_validity, duckdb_vector_size};
 use duckdb_extension_framework::table_functions::{BindInfo, FunctionInfo, InitInfo, TableFunction};
-use jfrs::reader::event::Accessor;
-use jfrs::reader::{Chunk, JfrReader};
+use jfrs::reader::event::{Accessor, Event};
+use jfrs::reader::{Chunk, ChunkReader, JfrReader};
 use jfrs::reader::type_descriptor::{TypeDescriptor, TypePool};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 
@@ -159,8 +160,12 @@ fn map_primitive_type(type_name: &str) -> Option<LogicalType> {
 unsafe extern "C" fn jfr_scan_init(info: duckdb_init_info) {
     let info = InitInfo::from(info);
     let init_data = malloc_struct::<JfrInitData>();
-    (*init_data).done = false;
-    info.set_init_data(init_data.cast(), None);
+    let d = init_data.as_mut().unwrap();
+    d.done = false;
+    d.chunk_idx = -1;
+    d.offset_in_chunk = 0;
+    // d.chunks = vec![];
+    info.set_init_data(init_data.cast(), Some(duckdb_free));
 }
 
 unsafe extern "C" fn jfr_scan_func(
@@ -169,54 +174,83 @@ unsafe extern "C" fn jfr_scan_func(
 ) {
     let info = FunctionInfo::from(info);
     let output = DataChunk::from(output_raw);
-    let init_data = info.get_init_data::<JfrInitData>();
-    let bind_data = info.get_bind_data::<JfrBindData>();
+    let init_data = info.get_init_data::<JfrInitData>().as_mut().unwrap();
+    let bind_data = info.get_bind_data::<JfrBindData>().as_ref().unwrap();
 
-    if (*init_data).done {
+    if (init_data).done {
         output.set_size(0);
         return;
     }
 
-    let filename = CStr::from_ptr((*bind_data).filename);
+    let filename = CStr::from_ptr(bind_data.filename);
     let filename_rs = filename.to_str().unwrap();
-    let tablename = CStr::from_ptr((*bind_data).tablename);
+    let tablename = CStr::from_ptr(bind_data.tablename);
     let tablename_rs = tablename.to_str().unwrap();
 
-    let mut reader = JfrReader::new(File::open(filename_rs).unwrap());
-    let mut row = 0;
-
-    let mut child_offsets = HashMap::<String, usize>::new();
-    for chunk in reader.chunks() {
-        let (reader, chunk) = chunk.unwrap();
-        let field_names = chunk.metadata.type_pool
-            .get_types()
-            .filter(|t| t.name() == tablename_rs)
-            .flat_map(|t| t.fields.iter().map(|f| f.name()))
-            .collect::<Vec<_>>();
-        // let field_names = vec!["startTime", "stackTrace"];
-        println!("field_names: {:?}", field_names);
-        for event in reader.events(&chunk).flatten().filter(|e| e.class.name() == tablename_rs) {
-            // if row > 10 {
-            //     break;
-            // }
-            for col in 0..output.get_column_count() {
-                // println!("col: {}, name: {}", col, field_names[col as usize].to_string());
-                populate_column(
-                    row,
-                    duckdb_data_chunk_get_vector(output_raw, col),
-                    &output,
-                    &chunk.metadata.type_pool,
-                    &chunk,
-                    event.value().get_field(field_names[col as usize])
-                        .expect(format!("field {} not found", field_names[col as usize]).as_str()),
-                    field_names[col as usize].to_string(),
-                    &mut child_offsets);
-            }
-            row += 1;
+    // Read all data into memory first
+    if init_data.chunk_idx < 0 {
+        let mut reader = JfrReader::new(File::open(filename_rs).unwrap());
+        let mut chunks: Vec<(ChunkReader, Chunk)> = reader.chunks().flatten().collect();
+        if chunks.len() == 0 {
+            init_data.done = true;
+            output.set_size(0);
+            return;
         }
+
+        init_data.chunks = chunks.as_mut_ptr();
+        forget(chunks);
+        init_data.chunk_idx = 0;
     }
 
-    (*init_data).done = true;
+    let vector_size = duckdb_vector_size() as usize;
+
+    let chunk_idx = init_data.chunk_idx;
+    let mut row = 0;
+    let mut child_offsets = HashMap::<String, usize>::new();
+
+    let (mut reader, chunk) = init_data.chunks.offset(chunk_idx).read();
+    let field_names = chunk.metadata.type_pool
+        .get_types()
+        .filter(|t| t.name() == tablename_rs)
+        .flat_map(|t| t.fields.iter().map(|f| f.name()))
+        .collect::<Vec<_>>();
+    // let field_names = vec!["startTime", "stackTrace"];
+    println!("field_names: {:?}, offset: {}", field_names, init_data.offset_in_chunk);
+    // let events: Vec<Event<'_>> = reader.events_from(&chunk, init_data.offset_in_chunk)
+    //     .flatten()
+    //     .filter(|e| e.class.name() == tablename_rs)
+    //     .collect();
+    for event in reader.events_from(&chunk, init_data.offset_in_chunk) {
+        let event = event.unwrap();
+        if event.class.name() != tablename_rs {
+            continue;
+        }
+        if row >= vector_size {
+            init_data.offset_in_chunk = event.byte_offset;
+            output.set_size(row as u64);
+            forget(reader);
+            forget(chunk);
+            return;
+        }
+        for col in 0..output.get_column_count() {
+            // println!("col: {}, name: {}", col, field_names[col as usize].to_string());
+            populate_column(
+                row,
+                duckdb_data_chunk_get_vector(output_raw, col),
+                &output,
+                &chunk.metadata.type_pool,
+                &chunk,
+                event.value().get_field(field_names[col as usize])
+                    .expect(format!("field {} not found", field_names[col as usize]).as_str()),
+                field_names[col as usize].to_string(),
+                &mut child_offsets);
+        }
+        row += 1;
+    }
+    forget(reader);
+    forget(chunk);
+
+    init_data.done = true;
     output.set_size(row as u64);
 }
 
@@ -438,6 +472,9 @@ unsafe fn assign<T>(vector: duckdb_vector, row_idx: usize, value: T) {
 
 struct JfrInitData {
     done: bool,
+    chunks: *mut (ChunkReader, Chunk),
+    chunk_idx: isize,
+    offset_in_chunk: u64,
 }
 
 struct JfrBindData {

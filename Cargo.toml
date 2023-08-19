@@ -7,8 +7,11 @@ edition = "2021"
 
 [dependencies]
 duckdb-extension-framework = { git = "https://github.com/ocadaruma/duckdb-extension-framework.git", rev = "659460a" }
-jfrs = { git = "https://github.com/ocadaruma/jfrs.git", rev = "0c4cb94" }
+jfrs = { git = "https://github.com/ocadaruma/jfrs.git", rev = "f912796" }
 
 [lib]
 name = "jfr_extension"
 crate-type = ["cdylib"]
+
+[profile.release]
+debug = true
