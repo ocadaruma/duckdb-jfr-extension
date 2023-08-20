@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 duckdb-extension-framework = { git = "https://github.com/ocadaruma/duckdb-extension-framework.git", rev = "659460a" }
-jfrs = { git = "https://github.com/ocadaruma/jfrs.git", rev = "f912796" }
+jfrs = { git = "https://github.com/ocadaruma/jfrs.git", rev = "e7000b6" }
+rustc-hash = "1.1.0"
 
 [lib]
 name = "jfr_extension"
