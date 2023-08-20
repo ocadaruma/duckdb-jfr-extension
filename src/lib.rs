@@ -229,6 +229,7 @@ unsafe extern "C" fn jfr_scan_func(
     //     .collect();
     let mut cstrs = FxHashMap::<u64, CString>::default();
     let mut logical_type_pool = FxHashMap::<u64, duckdb_logical_type>::default();
+    let mut vector_pool = FxHashMap::<(u64, u64), duckdb_vector>::default();
     for event in reader.events_from(&chunk, init_data.offset_in_chunk) {
         let event = event.unwrap();
         if event.class.name() != tablename_rs {
@@ -254,7 +255,8 @@ unsafe extern "C" fn jfr_scan_func(
                     .expect(format!("field {} not found", field_names[col as usize]).as_str()),
                 &mut children_idx,
                 &mut cstrs,
-                &mut logical_type_pool);
+                &mut logical_type_pool,
+                &mut vector_pool);
         }
         row += 1;
     }
@@ -367,15 +369,17 @@ unsafe fn set_null(vector: duckdb_vector, row_idx: usize) {
 
 unsafe fn set_null_recursive(vector: duckdb_vector,
                              row_idx: usize,
-                             logical_type_pool: &mut FxHashMap<u64, duckdb_logical_type>) {
+                             logical_type_pool: &mut FxHashMap<u64, duckdb_logical_type>,
+                             vector_pool: &mut FxHashMap<(u64, u64), duckdb_vector>) {
     let mut logical_type = logical_type_pool.entry(vector as u64)
         .or_insert_with(|| duckdb_vector_get_column_type(vector));
 
     if duckdb_get_type_id(*logical_type) == DUCKDB_TYPE_DUCKDB_TYPE_STRUCT {
         let child_count = duckdb_struct_type_child_count(*logical_type);
         for i in 0..child_count {
-            let child = duckdb_struct_vector_get_child(vector, i);
-            set_null_recursive(child, row_idx, logical_type_pool);
+            let child = vector_pool.entry((vector as u64, i))
+                .or_insert_with(|| duckdb_struct_vector_get_child(vector, i));
+            set_null_recursive(*child, row_idx, logical_type_pool, vector_pool);
         }
     } else {
         set_null(vector, row_idx);
@@ -393,7 +397,8 @@ unsafe fn populate_column(
     accessor: Accessor<'_>,
     children_idx: &mut Vec<usize>,
     cstrs: &mut FxHashMap<u64, CString>,
-    logical_type_pool: &mut FxHashMap<u64, duckdb_logical_type>) {
+    logical_type_pool: &mut FxHashMap<u64, duckdb_logical_type>,
+    vector_pool: &mut FxHashMap<(u64, u64), duckdb_vector>) {
     match accessor.get_resolved().map(|v| v.value) {
         Some(ValueDescriptor::Primitive(p)) => {
             // println!("primitive!!!: {:?}", p);
@@ -410,7 +415,7 @@ unsafe fn populate_column(
                 Primitive::Boolean(v) => assign(vector, row_idx, *v),
                 Primitive::Short(v) => assign(vector, row_idx, *v),
                 Primitive::Byte(v) => assign(vector, row_idx, *v),
-                Primitive::NullString => set_null_recursive(vector, row_idx, logical_type_pool),
+                Primitive::NullString => set_null_recursive(vector, row_idx, logical_type_pool, vector_pool),
                 Primitive::String(s) => {
                     let ptr = s.as_ptr() as u64;
                     if let Some(cs) = cstrs.get(&ptr) {
@@ -434,20 +439,22 @@ unsafe fn populate_column(
             for field_idx in 0..cnt {
                 // println!("field_name: {}, type_name: {}", name_rs, type_desc.name());
                 // println!("type: {}, field: {}, field_idx: {}, jfr_field_idx: {}", type_desc.name(), name_rs, field_idx, jfr_field_idx);
-                let child_vector = duckdb_struct_vector_get_child(vector, field_idx);
+                let child_vector = vector_pool.entry((vector as u64, field_idx))
+                    .or_insert_with(|| duckdb_struct_vector_get_child(vector, field_idx));
                 if let Some(acc) = Accessor::new(chunk, &obj.fields[field_idx as usize]).get_resolved() {
                     populate_column(
                         row_idx,
-                        child_vector,
+                        *child_vector,
                         output,
                         type_pool,
                         chunk,
                         acc,
                         children_idx,
                         cstrs,
-                        logical_type_pool);
+                        logical_type_pool,
+                        vector_pool);
                 } else {
-                    set_null_recursive(child_vector, row_idx, logical_type_pool);
+                    set_null_recursive(*child_vector, row_idx, logical_type_pool, vector_pool);
                 }
             }
             // duckdb_destroy_logical_type(&mut logical_type);
@@ -469,9 +476,10 @@ unsafe fn populate_column(
                         acc,
                         children_idx,
                         cstrs,
-                        logical_type_pool);
+                        logical_type_pool,
+                        vector_pool);
                 } else {
-                    set_null_recursive(child_vector, child_offset + i, logical_type_pool);
+                    set_null_recursive(child_vector, child_offset + i, logical_type_pool, vector_pool);
                 }
             }
             Vector::<duckdb_list_entry>::from(vector).get_data().offset(row_idx as isize).write(duckdb_list_entry {
@@ -482,7 +490,7 @@ unsafe fn populate_column(
             duckdb_list_vector_set_size(vector, (child_offset + arr.len()) as u64);
         }
         _ => {
-            set_null_recursive(vector, row_idx, logical_type_pool);
+            set_null_recursive(vector, row_idx, logical_type_pool, vector_pool);
         }
     }
 }
