@@ -1,8 +1,10 @@
+mod schema;
+
 use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::fmt::format;
 use std::fs::File;
-use std::mem::forget;
+use std::mem::{forget, ManuallyDrop};
 use std::ptr::{null_mut, slice_from_raw_parts_mut};
 use std::slice::from_raw_parts_mut;
 use duckdb_extension_framework::{check, Connection, Database, DataChunk, LogicalType, LogicalTypeId, malloc_struct, Vector};
@@ -13,11 +15,13 @@ use jfrs::reader::{Chunk, ChunkReader, JfrReader};
 use jfrs::reader::type_descriptor::{TypeDescriptor, TypePool};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 use rustc_hash::FxHashMap;
+use crate::schema::TableStruct;
 
 // TODO:
 // - multi chunk
 // - CString-pool fails with non-constant-pool-String
 // - proper child-index management (without using format!)
+// - error handlings
 
 #[no_mangle]
 pub unsafe extern "C" fn jfr_init(db: *mut c_void) {
@@ -75,23 +79,19 @@ unsafe extern "C" fn jfr_scan_bind(info: duckdb_bind_info) {
     let tablename_rs = tablename.to_str().unwrap();
 
     let mut reader = JfrReader::new(File::open(filename_rs).unwrap());
-    for chunk in reader.chunks() {
-        let (_, chunk) = chunk.unwrap();
-        for type_desc in chunk.metadata.type_pool.get_types() {
-            if type_desc.name() == tablename_rs {
-                for field in type_desc.fields.iter() {
-                    let tpe = chunk.metadata.type_pool.get(field.class_id).unwrap();
-                    info.add_result_column(
-                        field.name(),
-                        create_type(&chunk.metadata.type_pool, tpe));
-                }
-            }
-        }
+    let (_, chunk) = reader.chunks().flatten().next().unwrap();
+
+    let strukt = TableStruct::from_chunk(&chunk, tablename_rs);
+    for s in strukt.children.iter() {
+        info.add_result_column(
+            s.type_name.as_str(),
+            create_type(s));
     }
 
     let bind_data = malloc_struct::<JfrBindData>();
     (*bind_data).filename = filename.into_raw();
     (*bind_data).tablename = tablename.into_raw();
+    (*bind_data).schema = ManuallyDrop::new(strukt);
     info.set_bind_data(bind_data.cast(), None);
 }
 
@@ -123,21 +123,19 @@ unsafe extern "C" fn jfr_scan_bind(info: duckdb_bind_info) {
 //     info.set_bind_data(bind_data.cast(), None);
 // }
 
-fn create_type(type_pool: &TypePool, type_desc: &TypeDescriptor) -> LogicalType {
-    match map_primitive_type(type_desc.name()) {
+fn create_type(strukt: &TableStruct) -> LogicalType {
+    match map_primitive_type(strukt.type_name.as_str()) {
         Some(t) => t,
         None => {
             let mut shape = vec![];
-            for field in type_desc.fields.iter() {
-                let t = type_pool.get(field.class_id).unwrap();
-                // println!("field: {}, type: {}", field.name(), t.name());
-                let t = create_type(type_pool, t);
-                let t = if field.array_type {
+            for s in strukt.children.iter() {
+                let t = create_type(s);
+                let t = if s.is_array {
                     LogicalType::new_list_type(&t)
                 } else {
                     t
                 };
-                shape.push((field.name(), t));
+                shape.push((s.type_name.as_str(), t));
             }
             LogicalType::new_struct_type(shape.as_slice())
         }
@@ -155,10 +153,6 @@ fn map_primitive_type(type_name: &str) -> Option<LogicalType> {
         "short" => Some(LogicalType::new(LogicalTypeId::Smallint)),
         "byte" => Some(LogicalType::new(LogicalTypeId::Tinyint)),
         "java.lang.String" => Some(LogicalType::new(LogicalTypeId::Varchar)),
-        "jdk.types.ClassLoader" => {
-            let symbol = LogicalType::new_struct_type(&[("string", LogicalType::new(LogicalTypeId::Varchar))]);
-            Some(LogicalType::new_struct_type(&[("name", symbol)]))
-        }
         _ => None
     }
 }
@@ -188,6 +182,7 @@ unsafe extern "C" fn jfr_scan_func(
         return;
     }
 
+    let schema = &bind_data.schema;
     let filename = CStr::from_ptr(bind_data.filename);
     let filename_rs = filename.to_str().unwrap();
     let tablename = CStr::from_ptr(bind_data.tablename);
@@ -196,24 +191,27 @@ unsafe extern "C" fn jfr_scan_func(
     // Read all data into memory first
     if init_data.chunk_idx < 0 {
         let mut reader = JfrReader::new(File::open(filename_rs).unwrap());
-        let mut chunks: Vec<(ChunkReader, Chunk)> = reader.chunks().flatten().collect();
+        let mut chunks: Vec<(ManuallyDrop<ChunkReader>, ManuallyDrop<Chunk>)> = reader
+            .chunks()
+            .flatten()
+            .map(|(r, c)| (ManuallyDrop::new(r), ManuallyDrop::new(c)))
+            .collect();
         if chunks.len() == 0 {
             init_data.done = true;
             output.set_size(0);
             return;
         }
-
         init_data.chunks = chunks.as_mut_ptr();
         forget(chunks);
         init_data.chunk_idx = 0;
     }
 
     let vector_size = duckdb_vector_size() as usize;
-    let mut children_idx = vec![0usize; 1024];
+    let mut children_idx = vec![0usize; 1024]; // TODO grow
+    let mut vector_pool = vec![None; 1024]; // TODO grow
 
     let chunk_idx = init_data.chunk_idx;
     let mut row = 0;
-    let mut child_offsets = HashMap::<String, usize>::new();
 
     let (mut reader, chunk) = init_data.chunks.offset(chunk_idx).read();
     let field_names = chunk.metadata.type_pool
@@ -222,14 +220,12 @@ unsafe extern "C" fn jfr_scan_func(
         .flat_map(|t| t.fields.iter().map(|f| f.name()))
         .collect::<Vec<_>>();
     // let field_names = vec!["startTime", "stackTrace"];
-    println!("field_names: {:?}, offset: {}", field_names, init_data.offset_in_chunk);
+    // println!("field_names: {:?}, offset: {}", field_names, init_data.offset_in_chunk);
     // let events: Vec<Event<'_>> = reader.events_from(&chunk, init_data.offset_in_chunk)
     //     .flatten()
     //     .filter(|e| e.class.name() == tablename_rs)
     //     .collect();
     let mut cstrs = FxHashMap::<u64, CString>::default();
-    let mut logical_type_pool = FxHashMap::<u64, duckdb_logical_type>::default();
-    let mut vector_pool = FxHashMap::<(u64, u64), duckdb_vector>::default();
     for event in reader.events_from(&chunk, init_data.offset_in_chunk) {
         let event = event.unwrap();
         if event.class.name() != tablename_rs {
@@ -238,34 +234,30 @@ unsafe extern "C" fn jfr_scan_func(
         if row >= vector_size {
             init_data.offset_in_chunk = event.byte_offset;
             output.set_size(row as u64);
-            forget(reader);
-            forget(chunk);
+            // forget(reader);
+            // forget(chunk);
             return;
         }
-        let mut n = 0;
+
         for col in 0..output.get_column_count() {
             // println!("col: {}, name: {}", col, field_names[col as usize].to_string());
             populate_column(
                 row,
                 duckdb_data_chunk_get_vector(output_raw, col),
                 &output,
-                &chunk.metadata.type_pool,
                 &chunk,
+                &schema.children[col as usize],
                 event.value().get_field(field_names[col as usize])
                     .expect(format!("field {} not found", field_names[col as usize]).as_str()),
                 &mut children_idx,
                 &mut cstrs,
-                &mut logical_type_pool,
                 &mut vector_pool);
         }
         row += 1;
     }
-    for value in logical_type_pool.values_mut() {
-        duckdb_destroy_logical_type(value);
-    }
 
-    forget(reader);
-    forget(chunk);
+    // forget(reader);
+    // forget(chunk);
 
     init_data.done = true;
     output.set_size(row as u64);
@@ -369,36 +361,31 @@ unsafe fn set_null(vector: duckdb_vector, row_idx: usize) {
 
 unsafe fn set_null_recursive(vector: duckdb_vector,
                              row_idx: usize,
-                             logical_type_pool: &mut FxHashMap<u64, duckdb_logical_type>,
-                             vector_pool: &mut FxHashMap<(u64, u64), duckdb_vector>) {
-    let mut logical_type = logical_type_pool.entry(vector as u64)
-        .or_insert_with(|| duckdb_vector_get_column_type(vector));
-
-    if duckdb_get_type_id(*logical_type) == DUCKDB_TYPE_DUCKDB_TYPE_STRUCT {
-        let child_count = duckdb_struct_type_child_count(*logical_type);
-        for i in 0..child_count {
-            let child = vector_pool.entry((vector as u64, i))
-                .or_insert_with(|| duckdb_struct_vector_get_child(vector, i));
-            set_null_recursive(*child, row_idx, logical_type_pool, vector_pool);
+                             strukt: &TableStruct,
+                             vector_pool: &mut Vec<Option<duckdb_vector>>) {
+    if strukt.children.len() > 0 {
+        for (i, s) in strukt.children.iter().enumerate() {
+            if vector_pool[s.idx].is_none() {
+                vector_pool[s.idx] = Some(duckdb_struct_vector_get_child(vector, i as u64));
+            }
+            let child_vector = vector_pool[s.idx].unwrap();
+            set_null_recursive(child_vector, row_idx, s, vector_pool);
         }
     } else {
         set_null(vector, row_idx);
     }
-
-    // duckdb_destroy_logical_type(&mut logical_type);
 }
 
 unsafe fn populate_column(
     row_idx: usize,
     vector: duckdb_vector,
     output: &DataChunk,
-    type_pool: &TypePool,
     chunk: &Chunk,
+    strukt: &TableStruct,
     accessor: Accessor<'_>,
     children_idx: &mut Vec<usize>,
     cstrs: &mut FxHashMap<u64, CString>,
-    logical_type_pool: &mut FxHashMap<u64, duckdb_logical_type>,
-    vector_pool: &mut FxHashMap<(u64, u64), duckdb_vector>) {
+    vector_pool: &mut Vec<Option<duckdb_vector>>) {
     match accessor.get_resolved().map(|v| v.value) {
         Some(ValueDescriptor::Primitive(p)) => {
             // println!("primitive!!!: {:?}", p);
@@ -415,7 +402,7 @@ unsafe fn populate_column(
                 Primitive::Boolean(v) => assign(vector, row_idx, *v),
                 Primitive::Short(v) => assign(vector, row_idx, *v),
                 Primitive::Byte(v) => assign(vector, row_idx, *v),
-                Primitive::NullString => set_null_recursive(vector, row_idx, logical_type_pool, vector_pool),
+                Primitive::NullString => set_null_recursive(vector, row_idx, strukt, vector_pool),
                 Primitive::String(s) => {
                     let ptr = s.as_ptr() as u64;
                     if let Some(cs) = cstrs.get(&ptr) {
@@ -432,32 +419,28 @@ unsafe fn populate_column(
         }
         Some(ValueDescriptor::Object(obj)) => {
             // println!("obj!!!");
-            let mut logical_type = logical_type_pool.entry(vector as u64)
-                .or_insert_with(|| duckdb_vector_get_column_type(vector));
-            let cnt = duckdb_struct_type_child_count(*logical_type);
-            let mut f = 0;
-            for field_idx in 0..cnt {
+            for (i, s) in strukt.children.iter().enumerate() {
                 // println!("field_name: {}, type_name: {}", name_rs, type_desc.name());
                 // println!("type: {}, field: {}, field_idx: {}, jfr_field_idx: {}", type_desc.name(), name_rs, field_idx, jfr_field_idx);
-                let child_vector = vector_pool.entry((vector as u64, field_idx))
-                    .or_insert_with(|| duckdb_struct_vector_get_child(vector, field_idx));
-                if let Some(acc) = Accessor::new(chunk, &obj.fields[field_idx as usize]).get_resolved() {
+                if vector_pool[s.idx].is_none() {
+                    vector_pool[s.idx] = Some(duckdb_struct_vector_get_child(vector, i as u64));
+                }
+                let child_vector = vector_pool[s.idx].unwrap();
+                if let Some(acc) = Accessor::new(chunk, &obj.fields[i]).get_resolved() {
                     populate_column(
                         row_idx,
-                        *child_vector,
+                        child_vector,
                         output,
-                        type_pool,
                         chunk,
+                        s,
                         acc,
                         children_idx,
                         cstrs,
-                        logical_type_pool,
                         vector_pool);
                 } else {
-                    set_null_recursive(*child_vector, row_idx, logical_type_pool, vector_pool);
+                    set_null_recursive(child_vector, row_idx, s, vector_pool);
                 }
             }
-            // duckdb_destroy_logical_type(&mut logical_type);
         }
         Some(ValueDescriptor::Array(arr)) => {
             // println!("array!!!");
@@ -471,26 +454,25 @@ unsafe fn populate_column(
                         child_offset + i,
                         child_vector,
                         output,
-                        type_pool,
                         chunk,
+                        strukt,
                         acc,
                         children_idx,
                         cstrs,
-                        logical_type_pool,
                         vector_pool);
                 } else {
-                    set_null_recursive(child_vector, child_offset + i, logical_type_pool, vector_pool);
+                    set_null_recursive(child_vector, child_offset + i, strukt, vector_pool);
                 }
             }
             Vector::<duckdb_list_entry>::from(vector).get_data().offset(row_idx as isize).write(duckdb_list_entry {
                 length: arr.len() as u64,
                 offset: child_offset as u64,
             });
-            children_idx[0] = child_offset + arr.len();
+            children_idx[strukt.idx] = child_offset + arr.len();
             duckdb_list_vector_set_size(vector, (child_offset + arr.len()) as u64);
         }
         _ => {
-            set_null_recursive(vector, row_idx, logical_type_pool, vector_pool);
+            set_null_recursive(vector, row_idx, strukt, vector_pool);
         }
     }
 }
@@ -502,7 +484,7 @@ unsafe fn assign<T>(vector: duckdb_vector, row_idx: usize, value: T) {
 
 struct JfrInitData {
     done: bool,
-    chunks: *mut (ChunkReader, Chunk),
+    chunks: *mut (ManuallyDrop<ChunkReader>, ManuallyDrop<Chunk>),
     chunk_idx: isize,
     offset_in_chunk: u64,
 }
@@ -510,4 +492,5 @@ struct JfrInitData {
 struct JfrBindData {
     filename: *mut c_char,
     tablename: *mut c_char,
+    schema: ManuallyDrop<TableStruct>,
 }
