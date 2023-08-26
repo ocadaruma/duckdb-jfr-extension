@@ -1,26 +1,32 @@
 use jfrs::reader::Chunk;
-use jfrs::reader::type_descriptor::{TypeDescriptor, TypePool};
+use jfrs::reader::type_descriptor::{TickUnit, TypeDescriptor, TypePool, Unit};
 
 #[derive(Debug)]
 pub struct TableStruct {
     pub idx: usize,
     pub is_array: bool,
+    pub name: String,
     pub type_name: String,
+    pub tick_unit: Option<TickUnit>,
+    pub unit: Option<Unit>,
     pub children: Vec<TableStruct>,
 }
 
 impl TableStruct {
-    pub fn new(type_name: String) -> Self {
+    pub fn new(name: String, type_name: String) -> Self {
         Self {
             idx: 0,
             is_array: false,
+            name,
             type_name,
+            tick_unit: None,
+            unit: None,
             children: vec![],
         }
     }
 
     pub fn from_chunk(chunk: &Chunk, type_name: &str) -> Self {
-        let mut root = Self::new(type_name.to_string());
+        let mut root = Self::new("root".to_string(), type_name.to_string());
         let tpe = chunk.metadata
             .type_pool
             .get_types()
@@ -52,9 +58,13 @@ impl TableStruct {
         let mut child_count = 1;
         for field in tpe.fields.iter() {
             let next_tpe = type_pool.get(field.class_id).unwrap();
-            let mut child = TableStruct::new(next_tpe.name().to_string());
+            let mut child = TableStruct::new(
+                field.name().to_string(),
+                next_tpe.name().to_string());
             child.idx = idx + child_count;
             child.is_array = field.array_type;
+            child.tick_unit = field.tick_unit;
+            child.unit = field.unit;
             child_count += Self::traverse(child.idx, &mut child, next_tpe, type_pool, v.clone());
             strukt.children.push(child);
         }

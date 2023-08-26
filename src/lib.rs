@@ -12,7 +12,7 @@ use duckdb_extension_framework::duckly::{duckdb_bind_info, duckdb_column_logical
 use duckdb_extension_framework::table_functions::{BindInfo, FunctionInfo, InitInfo, TableFunction};
 use jfrs::reader::event::{Accessor, Event};
 use jfrs::reader::{Chunk, ChunkReader, JfrReader};
-use jfrs::reader::type_descriptor::{TypeDescriptor, TypePool};
+use jfrs::reader::type_descriptor::{TickUnit, TypeDescriptor, TypePool, Unit};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 use rustc_hash::FxHashMap;
 use crate::schema::TableStruct;
@@ -20,8 +20,8 @@ use crate::schema::TableStruct;
 // TODO:
 // - multi chunk
 // - CString-pool fails with non-constant-pool-String
-// - proper child-index management (without using format!)
 // - error handlings
+// - interval support
 
 #[no_mangle]
 pub unsafe extern "C" fn jfr_init(db: *mut c_void) {
@@ -43,7 +43,7 @@ unsafe fn init(db: *mut c_void) -> Result<(), Box<dyn std::error::Error>> {
     conn.register_table_function(table_function)?;
     jfr_create_view(
         conn.get_ptr().cast(),
-        CString::new("/Users/hokada/develop/src/github.com/moditect/jfr-analytics/src/test/resources/async-profiler-wall.jfr").unwrap().into_raw(),
+        CString::new("/Users/hokada/Downloads/LNMSGKF1574.nhnjp.ism-profile-65367-20230806-175232.wall-clock.jfr").unwrap().into_raw(),
         CString::new("jdk.ExecutionSample").unwrap().into_raw(),
     );
     println!("init!");
@@ -84,7 +84,7 @@ unsafe extern "C" fn jfr_scan_bind(info: duckdb_bind_info) {
     let strukt = TableStruct::from_chunk(&chunk, tablename_rs);
     for s in strukt.children.iter() {
         info.add_result_column(
-            s.type_name.as_str(),
+            s.name.as_str(),
             create_type(s));
     }
 
@@ -95,36 +95,8 @@ unsafe extern "C" fn jfr_scan_bind(info: duckdb_bind_info) {
     info.set_bind_data(bind_data.cast(), None);
 }
 
-// unsafe extern "C" fn jfr_scan_bind(info: duckdb_bind_info) {
-//     let info = BindInfo::from(info);
-//     // info.add_result_column("mycolumn", LogicalType::new(LogicalTypeId::Varchar));
-//     let filename = info.get_parameter(0).get_varchar();
-//     let filename_rs = filename.to_str().unwrap();
-//     let tablename = info.get_parameter(1).get_varchar();
-//     let tablename_rs = tablename.to_str().unwrap();
-//
-//     info.add_result_column("startTime", LogicalType::new(LogicalTypeId::Bigint));
-//     // info.add_result_column("sampledThread", LogicalType::new_struct_type(&[
-//     //     ("osName", LogicalType::new(LogicalTypeId::Varchar)),
-//     //     ("osThreadId", LogicalType::new(LogicalTypeId::Bigint)),
-//     //     ("javaName", LogicalType::new(LogicalTypeId::Varchar)),
-//     //     ("javaThreadId", LogicalType::new(LogicalTypeId::Bigint)),
-//     // ]));
-//     info.add_result_column(
-//         "numbers",
-//         LogicalType::new_list_type(&LogicalType::new(LogicalTypeId::Integer)));
-//     // info.add_result_column("state", LogicalType::new_struct_type(&[
-//     //     ("name", LogicalType::new(LogicalTypeId::Varchar)),
-//     // ]));
-//
-//     let bind_data = malloc_struct::<JfrBindData>();
-//     (*bind_data).filename = filename.into_raw();
-//     (*bind_data).tablename = tablename.into_raw();
-//     info.set_bind_data(bind_data.cast(), None);
-// }
-
 fn create_type(strukt: &TableStruct) -> LogicalType {
-    match map_primitive_type(strukt.type_name.as_str()) {
+    match map_primitive_type(strukt) {
         Some(t) => t,
         None => {
             let mut shape = vec![];
@@ -135,17 +107,24 @@ fn create_type(strukt: &TableStruct) -> LogicalType {
                 } else {
                     t
                 };
-                shape.push((s.type_name.as_str(), t));
+                shape.push((s.name.as_str(), t));
             }
             LogicalType::new_struct_type(shape.as_slice())
         }
     }
 }
 
-fn map_primitive_type(type_name: &str) -> Option<LogicalType> {
-    match type_name {
+fn map_primitive_type(strukt: &TableStruct) -> Option<LogicalType> {
+    match strukt.type_name.as_str() {
         "int" => Some(LogicalType::new(LogicalTypeId::Integer)),
-        "long" => Some(LogicalType::new(LogicalTypeId::Bigint)),
+        "long" => {
+            match (strukt.tick_unit, strukt.unit) {
+                (Some(TickUnit::Timestamp), _) |
+                (_, Some(Unit::EpochNano | Unit::EpochMilli | Unit::EpochSecond)) =>
+                    Some(LogicalType::new(LogicalTypeId::Timestamp)),
+                _ => Some(LogicalType::new(LogicalTypeId::Bigint)),
+            }
+        }
         "float" => Some(LogicalType::new(LogicalTypeId::Float)),
         "double" => Some(LogicalType::new(LogicalTypeId::Double)),
         "char" => Some(LogicalType::new(LogicalTypeId::Varchar)),
@@ -268,91 +247,6 @@ struct Sub {
     bar: f64,
 }
 
-// unsafe extern "C" fn jfr_scan_func(
-//     info: duckdb_function_info,
-//     output_raw: duckdb_data_chunk
-// ) {
-//     let info = FunctionInfo::from(info);
-//     let output = DataChunk::from(output_raw);
-//     let init_data = info.get_init_data::<JfrInitData>();
-//     let bind_data = info.get_bind_data::<JfrBindData>();
-//
-//     if (*init_data).done {
-//         output.set_size(0);
-//         return;
-//     }
-//
-//     let filename = CStr::from_ptr((*bind_data).filename);
-//     let filename_rs = filename.to_str().unwrap();
-//     let tablename = CStr::from_ptr((*bind_data).tablename);
-//     let tablename_rs = tablename.to_str().unwrap();
-//
-//     let vector = duckdb_data_chunk_get_vector(output_raw, 1);
-//     // duckdb_list_vector_reserve(vector, 1024 * 1024);
-//
-//     let row_count = 1024;
-//     let sub_vector: Vec<i32> = (0..10).collect();
-//     let mut child_offset = 0;
-//     for row in 0..row_count {
-//         output.get_vector::<u64>(0).get_data_as_slice()[row] = 1691936000000 + row as u64;
-//         // let vector = duckdb_data_chunk_get_vector(output_raw, 1);
-//         let capacity = child_offset + sub_vector.len();
-//         duckdb_list_vector_reserve(vector, capacity as u64);
-//         let array = duckdb_vector_get_data(duckdb_list_vector_get_child(vector));
-//         let slice = from_raw_parts_mut::<i32>(array.cast(), capacity);
-//         for (i, n) in sub_vector.iter().enumerate() {
-//             slice[child_offset + i] = *n;
-//         }
-//         Vector::<duckdb_list_entry>::from(vector).get_data_as_slice()[row] = duckdb_list_entry {
-//             length: sub_vector.len() as u64,
-//             offset: child_offset as u64,
-//         };
-//         child_offset += sub_vector.len();
-//         duckdb_list_vector_set_size(vector, child_offset as u64);
-//         // // truncated
-//         // let v = duckdb_struct_vector_get_child(vector, 0);
-//         // Vector::<bool>::from(v).get_data_as_slice()[row] = true;
-//         //
-//         // // frames
-//         // let v = duckdb_struct_vector_get_child(vector, 1);
-//         //
-//         // let sub = &sub_vector[row];
-//         //
-//         // duckdb_list_vector_reserve(v, 5000);
-//         // let list_v = duckdb_list_vector_get_child(v);
-//         //
-//         // for i in 0..sub.len() {
-//         //     let subb = &sub[i];
-//         //
-//         //     // foo >>
-//         //     let foo_v = duckdb_struct_vector_get_child(list_v, 0);
-//         //     duckdb_list_vector_reserve(foo_v, 5000);
-//         //     let foo_list_v = duckdb_list_vector_get_child(foo_v);
-//         //     for ii in 0..subb.foo.len() {
-//         //         Vector::<i32>::from(foo_list_v).get_data_as_slice()[child_offset_2 + ii] = subb.foo[ii];
-//         //     }
-//         //     Vector::<duckdb_list_entry>::from(foo_v).get_data_as_slice()[child_offset + i] = duckdb_list_entry {
-//         //         length: subb.foo.len() as u64,
-//         //         offset: child_offset_2 as u64,
-//         //     };
-//         //     child_offset_2 += subb.foo.len();
-//         //     duckdb_list_vector_set_size(foo_v, (child_offset_2 + subb.foo.len()) as u64);
-//         //     // << foo
-//         //
-//         //     let bar_v = duckdb_struct_vector_get_child(list_v, 1);
-//         //     Vector::<f64>::from(bar_v).get_data_as_slice()[child_offset + i] = subb.bar;
-//         // }
-//         // Vector::<duckdb_list_entry>::from(v).get_data_as_slice()[row] = duckdb_list_entry {
-//         //     length: sub.len() as u64,
-//         //     offset: child_offset as u64,
-//         // };
-//         // child_offset += sub.len();
-//         // duckdb_list_vector_set_size(v, (child_offset + sub.len()) as u64);
-//     }
-//     (*init_data).done = true;
-//     output.set_size(row_count as u64);
-// }
-
 unsafe fn set_null(vector: duckdb_vector, row_idx: usize) {
     duckdb_vector_ensure_validity_writable(vector);
     let idx = duckdb_vector_get_validity(vector);
@@ -391,7 +285,19 @@ unsafe fn populate_column(
             // println!("primitive!!!: {:?}", p);
             match p {
                 Primitive::Integer(v) => assign(vector, row_idx, *v),
-                Primitive::Long(v) => assign(vector, row_idx, *v),
+                Primitive::Long(v) => {
+                    let v = match (strukt.tick_unit, strukt.unit) {
+                        (Some(TickUnit::Timestamp), _) => {
+                            let ticks_per_nanos = (chunk.header.ticks_per_second as f64) / 1_000_000_000.0;
+                            (chunk.header.start_time_nanos + ((*v - chunk.header.start_ticks) as f64 / ticks_per_nanos) as i64) / 1_000
+                        }
+                        (_, Some(Unit::EpochNano)) => *v / 1_000,
+                        (_, Some(Unit::EpochMilli)) => *v * 1_000,
+                        (_, Some(Unit::EpochSecond)) => *v * 1_000_000,
+                        _ => *v,
+                    };
+                    assign(vector, row_idx, v)
+                },
                 Primitive::Float(v) => assign(vector, row_idx, *v),
                 Primitive::Double(v) => assign(vector, row_idx, *v),
                 Primitive::Character(v) => {
@@ -445,7 +351,7 @@ unsafe fn populate_column(
         Some(ValueDescriptor::Array(arr)) => {
             // println!("array!!!");
             let child_vector = duckdb_list_vector_get_child(vector);
-            let child_offset = children_idx[0];
+            let child_offset = children_idx[strukt.idx];
             duckdb_list_vector_reserve(vector, (child_offset + arr.len()) as u64);
             for (i, v) in arr.iter().enumerate() {
                 // println!("{} : {}", field_selector, child_offset + i);
