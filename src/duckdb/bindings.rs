@@ -1,0 +1,41 @@
+use libduckdb_sys::*;
+
+extern "C" {
+    pub fn duckdb_create_struct_type(
+        n_pairs: idx_t,
+        names: *mut *const ::std::os::raw::c_char,
+        types: *const duckdb_logical_type,
+    ) -> duckdb_logical_type;
+}
+
+#[repr(u32)]
+pub enum LogicalTypeId {
+    Boolean = DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN,
+    Tinyint = DUCKDB_TYPE_DUCKDB_TYPE_TINYINT,
+    Smallint = DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT,
+    Integer = DUCKDB_TYPE_DUCKDB_TYPE_INTEGER,
+    Bigint = DUCKDB_TYPE_DUCKDB_TYPE_BIGINT,
+    Utinyint = DUCKDB_TYPE_DUCKDB_TYPE_UTINYINT,
+    Usmallint = DUCKDB_TYPE_DUCKDB_TYPE_USMALLINT,
+    Uinteger = DUCKDB_TYPE_DUCKDB_TYPE_UINTEGER,
+    Ubigint = DUCKDB_TYPE_DUCKDB_TYPE_UBIGINT,
+    Float = DUCKDB_TYPE_DUCKDB_TYPE_FLOAT,
+    Double = DUCKDB_TYPE_DUCKDB_TYPE_DOUBLE,
+    Timestamp = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP,
+    Date = DUCKDB_TYPE_DUCKDB_TYPE_DATE,
+    Time = DUCKDB_TYPE_DUCKDB_TYPE_TIME,
+    Interval = DUCKDB_TYPE_DUCKDB_TYPE_INTERVAL,
+    Hugeint = DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT,
+    Varchar = DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR,
+    Blob = DUCKDB_TYPE_DUCKDB_TYPE_BLOB,
+    Decimal = DUCKDB_TYPE_DUCKDB_TYPE_DECIMAL,
+    TimestampS = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_S,
+    TimestampMs = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_MS,
+    TimestampNs = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_NS,
+    Enum = DUCKDB_TYPE_DUCKDB_TYPE_ENUM,
+    List = DUCKDB_TYPE_DUCKDB_TYPE_LIST,
+    Struct = DUCKDB_TYPE_DUCKDB_TYPE_STRUCT,
+    Map = DUCKDB_TYPE_DUCKDB_TYPE_MAP,
+    Uuid = DUCKDB_TYPE_DUCKDB_TYPE_UUID,
+    Union = DUCKDB_TYPE_DUCKDB_TYPE_UNION,
+}

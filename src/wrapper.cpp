@@ -7,30 +7,42 @@
 #include "duckdb/main/capi/capi_internal.hpp"
 #include "wrapper.hpp"
 
+#include <memory>
+
 using duckdb::Connection;
 using duckdb::DuckDB;
 using duckdb::DatabaseData;
 using duckdb::DatabaseInstance;
 using duckdb::Value;
 
-extern "C" {
-//const char* jfr_version_rust(void);
-//void jfr_init_rust(DatabaseInstance &db);
+static duckdb::child_list_t<duckdb::LogicalType> getVector(
+        idx_t n_pairs,
+        const char *const *names,
+        duckdb_logical_type const *types) {
+    duckdb::child_list_t<duckdb::LogicalType> members;
+    for (idx_t i = 0; i < n_pairs; i++) {
+        members.emplace_back(
+            std::string(names[i]),
+            *(duckdb::LogicalType *) types[i]);
+    }
+    return members;
+}
 
-//DUCKDB_EXTENSION_API const char* jfr_version() {
-//    return jfr_version_rust();
-//}
-//
-//DUCKDB_EXTENSION_API void jfr_init(DatabaseInstance &db) {
-////    auto wrapper = new DatabaseData();
-////    wrapper->database = duckdb::make_uniq<DuckDB>(db);
-//    jfr_init_rust(db);
-//}
+extern "C" {
 
 // Bridge functions
 void jfr_create_view(Connection &connection, const char* filename, const char* tablename) {
     connection.TableFunction("jfr_scan", {Value(filename), Value(tablename)})
             ->CreateView(tablename, true, false);
+}
+
+DUCKDB_EXTENSION_API duckdb_logical_type duckdb_create_struct_type(
+        idx_t n_pairs,
+        const char** names,
+        const duckdb_logical_type* types) {
+    auto *stype = new duckdb::LogicalType;
+    *stype = duckdb::LogicalType::STRUCT(getVector(n_pairs, names, types));
+    return reinterpret_cast<duckdb_logical_type>(stype);
 }
 }
 

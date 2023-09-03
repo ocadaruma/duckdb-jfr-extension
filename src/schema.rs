@@ -1,5 +1,5 @@
-use jfrs::reader::Chunk;
 use jfrs::reader::type_descriptor::{TickUnit, TypeDescriptor, TypePool, Unit};
+use jfrs::reader::Chunk;
 
 #[derive(Debug)]
 pub struct TableStruct {
@@ -27,7 +27,8 @@ impl TableStruct {
 
     pub fn from_chunk(chunk: &Chunk, type_name: &str) -> Self {
         let mut root = Self::new("root".to_string(), type_name.to_string());
-        let tpe = chunk.metadata
+        let tpe = chunk
+            .metadata
             .type_pool
             .get_types()
             .filter(|t| t.name() == type_name)
@@ -42,7 +43,8 @@ impl TableStruct {
         strukt: &mut TableStruct,
         tpe: &TypeDescriptor,
         type_pool: &TypePool,
-        visited_classes: Vec<i64>) -> usize {
+        visited_classes: Vec<i64>,
+    ) -> usize {
         // recursion guard
         if visited_classes.contains(&tpe.class_id) {
             return 1;
@@ -58,9 +60,7 @@ impl TableStruct {
         let mut child_count = 1;
         for field in tpe.fields.iter() {
             let next_tpe = type_pool.get(field.class_id).unwrap();
-            let mut child = TableStruct::new(
-                field.name().to_string(),
-                next_tpe.name().to_string());
+            let mut child = TableStruct::new(field.name().to_string(), next_tpe.name().to_string());
             child.idx = idx + child_count;
             child.is_array = field.array_type;
             child.tick_unit = field.tick_unit;
@@ -69,6 +69,32 @@ impl TableStruct {
             strukt.children.push(child);
         }
         child_count
+    }
+}
+
+mod tests {
+    use crate::schema::TableStruct;
+    use jfrs::reader::JfrReader;
+    use std::fs::File;
+
+    #[test]
+    fn test_schema() {
+        let path = "/Users/hokada/develop/src/github.com/moditect/jfr-analytics/src/test/resources/async-profiler-wall.jfr";
+        let (_, chunk) = JfrReader::new(File::open(path).unwrap())
+            .chunks()
+            .flatten()
+            .next()
+            .unwrap();
+        let tpe = chunk
+            .metadata
+            .type_pool
+            .get_types()
+            .filter(|t| t.name() == "jdk.ExecutionSample")
+            .next()
+            .unwrap();
+
+        let mut root = TableStruct::from_chunk(&chunk, tpe.name());
+        println!("{:#?}", root);
     }
 }
 
