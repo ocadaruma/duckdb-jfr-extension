@@ -6,13 +6,20 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-duckdb-extension-framework = { git = "https://github.com/ocadaruma/duckdb-extension-framework.git", rev = "659460a" }
-jfrs = { git = "https://github.com/ocadaruma/jfrs.git", rev = "d4a44d7" }
+#duckdb-extension-framework = { git = "https://github.com/ocadaruma/duckdb-extension-framework.git", rev = "0baf6b7" }
+libduckdb-sys = "0.8.1"
+#jfrs = { version = "0.2.0" }
+jfrs = { git = "https://github.com/ocadaruma/jfrs.git", rev = "887267c", features = ["cstring"] }
 rustc-hash = "1.1.0"
+anyhow = "1.0.72"
+
+[build-dependencies]
+build_script = "0.2.0"
+cc = "1.0.83"
 
 [lib]
-name = "jfr_extension"
-crate-type = ["cdylib"]
+crate-type = ["staticlib"]
+#crate-type = ["cdylib"]
 
 [profile.release]
 debug = true

@@ -9,6 +9,7 @@ pub mod logical_type;
 pub mod table_function;
 pub mod value;
 pub mod vector;
+pub mod file;
 
 use crate::duckdb::table_function::TableFunction;
 use crate::Result;
@@ -19,12 +20,17 @@ use libduckdb_sys::{
 };
 use std::ffi::c_void;
 use std::ptr::null_mut;
+use crate::duckdb::bindings::duckdb_register_table_function2;
 
 pub struct Database(duckdb_database);
 
 impl Database {
     pub fn from(ptr: *mut c_void) -> Self {
         Self(ptr.cast())
+    }
+
+    pub fn ptr(&self) -> duckdb_database {
+        self.0
     }
 
     pub fn connect(&self) -> Result<Connection> {
@@ -46,7 +52,7 @@ impl Connection {
     }
 
     pub fn register_table_function(&self, f: &TableFunction) -> Result<()> {
-        let r = unsafe { duckdb_register_table_function(self.0, f.ptr()) };
+        let r = unsafe { duckdb_register_table_function2(self.0, f.ptr()) };
         if r == DuckDBSuccess {
             Ok(())
         } else {

@@ -2,7 +2,7 @@ mod duckdb;
 mod schema;
 
 use crate::duckdb::bind_info::BindInfo;
-use crate::duckdb::bindings::LogicalTypeId;
+use crate::duckdb::bindings::{duckdb_client_context, LogicalTypeId};
 use crate::duckdb::data_chunk::DataChunk;
 use crate::duckdb::function_info::FunctionInfo;
 use crate::duckdb::init_info::InitInfo;
@@ -15,13 +15,7 @@ use jfrs::reader::event::{Accessor, Event};
 use jfrs::reader::type_descriptor::{TickUnit, TypeDescriptor, TypePool, Unit};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 use jfrs::reader::{Chunk, ChunkReader, JfrReader};
-use libduckdb_sys::{
-    duckdb_bind_info, duckdb_data_chunk, duckdb_data_chunk_get_vector, duckdb_free,
-    duckdb_function_info, duckdb_init_info, duckdb_library_version, duckdb_list_entry,
-    duckdb_list_vector_get_child, duckdb_list_vector_reserve, duckdb_list_vector_set_size,
-    duckdb_malloc, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector,
-    duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity, duckdb_vector_size, idx_t,
-};
+use libduckdb_sys::{duckdb_bind_info, duckdb_bind_set_error, duckdb_data_chunk, duckdb_data_chunk_get_vector, duckdb_database, duckdb_free, duckdb_function_info, duckdb_function_set_error, duckdb_init_info, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_malloc, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity, duckdb_vector_size, idx_t};
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -31,6 +25,8 @@ use std::io::Cursor;
 use std::mem::{forget, size_of, ManuallyDrop};
 use std::ptr::{null_mut, slice_from_raw_parts_mut};
 use std::slice::from_raw_parts_mut;
+use anyhow::anyhow;
+use crate::duckdb::file::FileHandle;
 
 type Result<T> = anyhow::Result<T>;
 
@@ -86,7 +82,9 @@ fn build_table_function_def() -> TableFunction {
 }
 
 unsafe extern "C" fn jfr_scan_bind(info: duckdb_bind_info) {
-    bind(info).expect("bind failed");
+    if let Err(err) = bind(info) {
+        duckdb_bind_set_error(info, CString::new(err.to_string()).unwrap().into_raw());
+    }
 }
 
 unsafe fn bind(info: duckdb_bind_info) -> Result<()> {
@@ -119,6 +117,10 @@ fn create_type(strukt: &TableStruct) -> Result<LogicalType> {
         None => {
             let mut shape = vec![];
             for s in strukt.children.iter() {
+                // TODO
+                if !s.valid {
+                    continue;
+                }
                 let t = create_type(s)?;
                 let t = if s.is_array {
                     LogicalType::new_list_type(&t)
@@ -164,11 +166,13 @@ unsafe extern "C" fn jfr_scan_init(info: duckdb_init_info) {
     info.set_init_data(init_data.cast(), Some(duckdb_free));
 }
 
-unsafe extern "C" fn jfr_scan_func(info: duckdb_function_info, output_raw: duckdb_data_chunk) {
-    scan(info, output_raw).expect("scan failed");
+unsafe extern "C" fn jfr_scan_func(context: duckdb_client_context, info: duckdb_function_info, output_raw: duckdb_data_chunk) {
+    if let Err(err) = scan(context, info, output_raw) {
+        duckdb_function_set_error(info, CString::new(err.to_string()).unwrap().into_raw());
+    }
 }
 
-unsafe fn scan(info: duckdb_function_info, output_raw: duckdb_data_chunk) -> Result<()> {
+unsafe fn scan(context: duckdb_client_context, info: duckdb_function_info, output_raw: duckdb_data_chunk) -> Result<()> {
     let info = FunctionInfo::from(info);
     let output = DataChunk::from(output_raw);
     let init_data = info.get_init_data::<JfrInitData>().as_mut().unwrap();
@@ -187,13 +191,14 @@ unsafe fn scan(info: duckdb_function_info, output_raw: duckdb_data_chunk) -> Res
 
     // Read all data into memory first
     if init_data.chunk_idx < 0 {
-        // let mut reader = JfrReader::new(File::open(filename_rs).unwrap());
-        let mut reader = JfrReader::new(Cursor::new(SAMPLE_FILE));
-        let mut chunks: Vec<(ManuallyDrop<ChunkReader>, ManuallyDrop<Chunk>)> = reader
-            .chunks()
-            .flatten()
-            .map(|(r, c)| (ManuallyDrop::new(r), ManuallyDrop::new(c)))
-            .collect();
+        // let mut reader = JfrReader::new(File::open(filename_rs)?);
+        let mut reader = JfrReader::new(FileHandle::open(context, filename_rs));
+        // let mut reader = JfrReader::new(Cursor::new(SAMPLE_FILE));
+        let mut chunks = vec![];
+        for chunk in reader.chunks() {
+            let (r, c) = chunk?;
+            chunks.push((ManuallyDrop::new(r), ManuallyDrop::new(c)));
+        }
         if chunks.len() == 0 {
             init_data.done = true;
             output.set_size(0);
@@ -246,7 +251,7 @@ unsafe fn scan(info: duckdb_function_info, output_raw: duckdb_data_chunk) -> Res
                 duckdb_data_chunk_get_vector(output_raw, col as idx_t),
                 &output,
                 &chunk,
-                &schema.children[col as usize],
+                &schema.children[col],
                 event
                     .value()
                     .get_field(field_names[col])
@@ -266,11 +271,6 @@ unsafe fn scan(info: duckdb_function_info, output_raw: duckdb_data_chunk) -> Res
     Ok(())
 }
 
-struct Sub {
-    foo: Vec<i32>,
-    bar: f64,
-}
-
 unsafe fn set_null(vector: duckdb_vector, row_idx: usize) {
     duckdb_vector_ensure_validity_writable(vector);
     let idx = duckdb_vector_get_validity(vector);
@@ -284,7 +284,7 @@ unsafe fn set_null_recursive(
     vector_pool: &mut Vec<Option<duckdb_vector>>,
 ) {
     if strukt.children.len() > 0 {
-        for (i, s) in strukt.children.iter().enumerate() {
+        for (i, s) in strukt.children.iter().filter(|s| s.valid).enumerate() {
             if vector_pool[s.idx].is_none() {
                 vector_pool[s.idx] = Some(duckdb_struct_vector_get_child(vector, i as idx_t));
             }
@@ -306,8 +306,8 @@ unsafe fn populate_column(
     children_idx: &mut Vec<usize>,
     vector_pool: &mut Vec<Option<duckdb_vector>>,
 ) {
-    match accessor.value {
-        ValueDescriptor::Primitive(p) => {
+    match accessor.resolve().map(|a| a.value) {
+        Some(ValueDescriptor::Primitive(p)) => {
             match p {
                 Primitive::Integer(v) => assign(vector, row_idx, *v),
                 Primitive::Long(v) => {
@@ -348,11 +348,10 @@ unsafe fn populate_column(
                 }
             }
         }
-        ValueDescriptor::Object(obj) => {
-            // println!("obj!!!");
-            for (i, s) in strukt.children.iter().enumerate() {
+        Some(ValueDescriptor::Object(obj)) => {
+            for (ii, (i, s)) in strukt.children.iter().enumerate().map(|(i, s)| (i, s)).filter(|(_, s)| s.valid).enumerate() {
                 if vector_pool[s.idx].is_none() {
-                    vector_pool[s.idx] = Some(duckdb_struct_vector_get_child(vector, i as u64));
+                    vector_pool[s.idx] = Some(duckdb_struct_vector_get_child(vector, ii as u64));
                 }
                 let child_vector = vector_pool[s.idx].unwrap();
                 populate_column(
@@ -367,7 +366,7 @@ unsafe fn populate_column(
                 );
             }
         }
-        ValueDescriptor::Array(arr) => {
+        Some(ValueDescriptor::Array(arr)) => {
             let child_vector = duckdb_list_vector_get_child(vector);
             let child_offset = children_idx[strukt.idx];
             duckdb_list_vector_reserve(vector, (child_offset + arr.len()) as u64);

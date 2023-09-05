@@ -10,6 +10,8 @@ pub struct TableStruct {
     pub tick_unit: Option<TickUnit>,
     pub unit: Option<Unit>,
     pub children: Vec<TableStruct>,
+    // TODO
+    pub valid: bool,
 }
 
 impl TableStruct {
@@ -22,6 +24,7 @@ impl TableStruct {
             tick_unit: None,
             unit: None,
             children: vec![],
+            valid: true,
         }
     }
 
@@ -34,41 +37,51 @@ impl TableStruct {
             .filter(|t| t.name() == type_name)
             .next()
             .unwrap();
-        Self::traverse(root.idx, &mut root, tpe, &chunk.metadata.type_pool, vec![]);
+        let mut idx = 0;
+        let mut max_idx = 0;
+        Self::traverse(&mut idx, &mut max_idx, &mut root, tpe, &chunk.metadata.type_pool, vec![]);
         root
     }
 
     fn traverse(
-        idx: usize,
+        idx: &mut usize,
+        max_idx: &mut usize,
         strukt: &mut TableStruct,
         tpe: &TypeDescriptor,
         type_pool: &TypePool,
         visited_classes: Vec<i64>,
-    ) -> usize {
+    ) {
+        *idx += 1;
         // recursion guard
         if visited_classes.contains(&tpe.class_id) {
-            return 1;
+            strukt.valid = false;
+            return;
         }
         // primitive
         if tpe.fields.is_empty() {
-            return 1;
+            // TODO
+            // match tpe.name() {
+            //     "int"|"long"|"float"|"double"|"char"|"boolean"|"short"|"byte"|"java.lang.String" => {}
+            //     _ => {
+            //         strukt.valid = false;
+            //     }
+            // }
+
+            return;
         }
         let mut v = visited_classes.clone();
         v.push(tpe.class_id);
-
-        let mut idx = idx;
-        let mut child_count = 1;
         for field in tpe.fields.iter() {
             let next_tpe = type_pool.get(field.class_id).unwrap();
             let mut child = TableStruct::new(field.name().to_string(), next_tpe.name().to_string());
-            child.idx = idx + child_count;
+            *max_idx = (*max_idx).max(*idx);
+            child.idx = *idx;
             child.is_array = field.array_type;
             child.tick_unit = field.tick_unit;
             child.unit = field.unit;
-            child_count += Self::traverse(child.idx, &mut child, next_tpe, type_pool, v.clone());
+            Self::traverse(idx, max_idx, &mut child, next_tpe, type_pool, v.clone());
             strukt.children.push(child);
         }
-        child_count
     }
 }
 
