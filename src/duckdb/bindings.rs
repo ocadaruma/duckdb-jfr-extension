@@ -17,6 +17,12 @@ pub type duckdb_table_function2_t = Option<
 pub type FileOpenFlags = u8;
 
 extern "C" {
+    pub fn jfr_scan_create_view(
+        conn: *mut c_void,
+        filename: *const c_char,
+        tablename: *const c_char,
+    );
+
     pub fn duckdb_create_struct_type(
         n_pairs: idx_t,
         names: *mut *const c_char,
@@ -60,6 +66,8 @@ extern "C" {
     pub fn duckdb_file_read(handle: duckdb_file_handle, buffer: *mut c_void, nr_bytes: i64) -> i64;
 
     pub fn duckdb_file_seek(handle: duckdb_file_handle, pos: u64);
+
+    pub fn duckdb_file_close(handle: duckdb_file_handle);
 }
 
 #[repr(u32)]

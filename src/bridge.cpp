@@ -1,13 +1,8 @@
-/*
- * because we link twice (once to the rust library, and once to the duckdb library) we need a bridge to export the rust symbols
- * this is that bridge
- */
-
 #include "duckdb.hpp"
 #include "duckdb/main/capi/capi_internal.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
-#include "wrapper.hpp"
+#include "bridge.hpp"
 
 #include <iostream>
 #include <memory>
@@ -18,7 +13,7 @@ using duckdb::Value;
 
 /// Taken from table_function-c.cpp
 
-namespace duckdb2 {
+namespace bridge {
     using namespace duckdb;
 
     struct CTableFunctionInfo : public TableFunctionInfo {
@@ -170,7 +165,6 @@ namespace duckdb2 {
     }
 
     void CTableFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
-        auto &fs = context.db->GetFileSystem();
         auto &bind_data = data_p.bind_data->Cast<CTableBindData>();
         auto &global_data = (CTableGlobalInitData &)*data_p.global_state;
         auto &local_data = (CTableLocalInitData &)*data_p.local_state;
@@ -205,17 +199,16 @@ static duckdb::child_list_t<duckdb::LogicalType> getVector(
 
 extern "C" {
 
-// Bridge functions
-void jfr_create_view(Connection &connection, const char* filename, const char* tablename) {
+void jfr_scan_create_view(Connection &connection, const char* filename, const char* tablename) {
     connection.TableFunction("jfr_scan", {Value(filename), Value(tablename)})
             ->CreateView(tablename, true, false);
 }
 
 duckdb_table_function duckdb_create_table_function2() {
-    auto function = new duckdb2::TableFunction("", {}, duckdb2::CTableFunction, duckdb2::CTableFunctionBind,
-                                              duckdb2::CTableFunctionInit, duckdb2::CTableFunctionLocalInit);
-    function->function_info = duckdb::make_shared<duckdb2::CTableFunctionInfo>();
-    function->cardinality = duckdb2::CTableFunctionCardinality;
+    auto function = new duckdb::TableFunction("", {}, bridge::CTableFunction, bridge::CTableFunctionBind,
+                                              bridge::CTableFunctionInit, bridge::CTableFunctionLocalInit);
+    function->function_info = duckdb::make_shared<bridge::CTableFunctionInfo>();
+    function->cardinality = bridge::CTableFunctionCardinality;
     return function;
 }
 
@@ -226,7 +219,7 @@ void duckdb_table_function2_set_function(
         return;
     }
     auto tf = (duckdb::TableFunction *)table_function;
-    auto info = (duckdb2::CTableFunctionInfo *)tf->function_info.get();
+    auto info = (bridge::CTableFunctionInfo *)tf->function_info.get();
     info->function = function;
 }
 
@@ -235,7 +228,7 @@ void duckdb_table_function2_set_bind(duckdb_table_function function, duckdb_tabl
         return;
     }
     auto tf = (duckdb::TableFunction *)function;
-    auto info = (duckdb2::CTableFunctionInfo *)tf->function_info.get();
+    auto info = (bridge::CTableFunctionInfo *)tf->function_info.get();
     info->bind = bind;
 }
 
@@ -244,7 +237,7 @@ void duckdb_table_function2_set_init(duckdb_table_function function, duckdb_tabl
         return;
     }
     auto tf = (duckdb::TableFunction *)function;
-    auto info = (duckdb2::CTableFunctionInfo *)tf->function_info.get();
+    auto info = (bridge::CTableFunctionInfo *)tf->function_info.get();
     info->init = init;
 }
 
@@ -254,13 +247,13 @@ duckdb_state duckdb_register_table_function2(duckdb_connection connection, duckd
     }
     auto con = (duckdb::Connection *)connection;
     auto tf = (duckdb::TableFunction *)function;
-    auto info = (duckdb2::CTableFunctionInfo *)tf->function_info.get();
+    auto info = (bridge::CTableFunctionInfo *)tf->function_info.get();
     if (tf->name.empty() || !info->bind || !info->init || !info->function) {
         return DuckDBError;
     }
     con->context->RunFunctionInTransaction([&]() {
         auto &catalog = duckdb::Catalog::GetSystemCatalog(*con->context);
-        duckdb2::CreateTableFunctionInfo tf_info(*tf);
+        duckdb::CreateTableFunctionInfo tf_info(*tf);
 
         // create the function in the catalog
         catalog.CreateTableFunction(*con->context, tf_info);
@@ -272,7 +265,7 @@ void *duckdb_function2_get_bind_data(duckdb_function_info info) {
     if (!info) {
         return nullptr;
     }
-    auto function_info = (duckdb2::CTableInternalFunctionInfo *)info;
+    auto function_info = (bridge::CTableInternalFunctionInfo *)info;
     return function_info->bind_data.bind_data;
 }
 
@@ -280,33 +273,33 @@ void *duckdb_function2_get_init_data(duckdb_function_info info) {
     if (!info) {
         return nullptr;
     }
-    auto function_info = (duckdb2::CTableInternalFunctionInfo *)info;
+    auto function_info = (bridge::CTableInternalFunctionInfo *)info;
     return function_info->init_data.init_data;
 }
 
-duckdb::FileHandle* duckdb_open_file(duckdb::ClientContext & context, const char *path, uint8_t flags) {
-//    duckdb::ClientContext &ctx = reinterpret_cast<duckdb::ClientContext &>(context);
-    auto &fs = context.db->GetFileSystem();
+duckdb_file_handle duckdb_open_file(duckdb_client_context context, const char *path, uint8_t flags) {
+    auto &fs = ((duckdb::ClientContext *) context)->db->GetFileSystem();
     auto handle = fs.OpenFile(path, flags);
-    auto ptr = handle.release();
-    std::cout << "opened file: " << ptr << std::endl;
-    return ptr;
+    return handle.release();
 }
 
-int64_t duckdb_file_get_size(duckdb::FileHandle* handle) {
-//    std::cout << "duckdb_file_get_size: " << &handle << std::endl;
-    return handle->GetFileSize();
+int64_t duckdb_file_get_size(duckdb_file_handle handle) {
+    return ((duckdb::FileHandle *)handle)->GetFileSize();
 }
 
-int64_t duckdb_file_read(duckdb::FileHandle* handle, void *buffer, int64_t nr_bytes) {
-    return handle->Read(buffer, nr_bytes);
+int64_t duckdb_file_read(duckdb_file_handle handle, void *buffer, int64_t nr_bytes) {
+    return ((duckdb::FileHandle *)handle)->Read(buffer, nr_bytes);
 }
 
-void duckdb_file_seek(duckdb::FileHandle* handle, idx_t pos) {
-    handle->Seek(pos);
+void duckdb_file_seek(duckdb_file_handle handle, idx_t pos) {
+    ((duckdb::FileHandle *)handle)->Seek(pos);
 }
 
-DUCKDB_EXTENSION_API duckdb_logical_type duckdb_create_struct_type(
+void duckdb_file_close(duckdb_file_handle handle) {
+    delete (duckdb::FileHandle *)handle;
+}
+
+duckdb_logical_type duckdb_create_struct_type(
         idx_t n_pairs,
         const char** names,
         const duckdb_logical_type* types) {

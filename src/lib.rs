@@ -2,7 +2,7 @@ mod duckdb;
 mod jfr_schema;
 
 use crate::duckdb::bind_info::BindInfo;
-use crate::duckdb::bindings::{duckdb_client_context, LogicalTypeId};
+use crate::duckdb::bindings::{duckdb_client_context, jfr_scan_create_view, LogicalTypeId};
 use crate::duckdb::data_chunk::DataChunk;
 use crate::duckdb::file::FileHandle;
 use crate::duckdb::function_info::FunctionInfo;
@@ -45,10 +45,6 @@ type Result<T> = anyhow::Result<T>;
 // - projection pushdown
 // - cleanup comments
 
-const SAMPLE_FILE: &[u8] = include_bytes!(
-    "/Users/hokada/develop/src/github.com/moditect/jfr-analytics/src/test/resources/async-profiler-wall.jfr"
-);
-
 #[no_mangle]
 pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: *mut c_void) {
     init(db).expect("init failed");
@@ -59,7 +55,7 @@ unsafe fn init(db: *mut c_void) -> Result<()> {
     let conn = db.connect()?;
     let table_function = build_table_function_def();
     conn.register_table_function(&table_function)?;
-    jfr_create_view(
+    jfr_scan_create_view(
         conn.ptr().cast(),
         CString::new("/Users/hokada/develop/src/github.com/moditect/jfr-analytics/src/test/resources/async-profiler-wall.jfr")?.into_raw(),
         CString::new("jdk.ExecutionSample")?.into_raw(),
@@ -71,10 +67,6 @@ unsafe fn init(db: *mut c_void) -> Result<()> {
 #[no_mangle]
 pub extern "C" fn libduckdb_jfr_extension_version() -> *const c_char {
     unsafe { duckdb_library_version() }
-}
-
-extern "C" {
-    fn jfr_create_view(conn: *mut c_void, filename: *const c_char, tablename: *const c_char);
 }
 
 fn build_table_function_def() -> TableFunction {
@@ -101,8 +93,8 @@ unsafe fn bind(info: duckdb_bind_info) -> Result<()> {
     let filename = param0.get_varchar()?;
     let tablename = param1.get_varchar()?;
 
-    // let mut reader = JfrReader::new(File::open(filename).unwrap());
-    let mut reader = JfrReader::new(Cursor::new(SAMPLE_FILE));
+    let mut reader = JfrReader::new(File::open(filename).unwrap());
+    // let mut reader = JfrReader::new(Cursor::new(SAMPLE_FILE));
     let (_, chunk) = reader.chunks().flatten().next().unwrap();
 
     let (root, count) = JfrField::from_chunk(&chunk, tablename)?;

@@ -1,6 +1,6 @@
 use crate::duckdb::bindings::{
-    duckdb_client_context, duckdb_file_get_size, duckdb_file_handle, duckdb_file_read,
-    duckdb_file_seek, duckdb_open_file, FILE_FLAGS_READ,
+    duckdb_client_context, duckdb_file_close, duckdb_file_get_size, duckdb_file_handle,
+    duckdb_file_read, duckdb_file_seek, duckdb_open_file, FILE_FLAGS_READ,
 };
 use std::ffi::CString;
 use std::io::{ErrorKind, Read, Seek, SeekFrom};
@@ -22,6 +22,12 @@ impl FileHandle {
             size: size as u64,
             pos: 0,
         }
+    }
+}
+
+impl Drop for FileHandle {
+    fn drop(&mut self) {
+        unsafe { duckdb_file_close(self.ptr) };
     }
 }
 
