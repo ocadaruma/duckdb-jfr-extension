@@ -1,6 +1,9 @@
+use crate::duckdb::bindings::{
+    duckdb_client_context, duckdb_file_get_size, duckdb_file_handle, duckdb_file_read,
+    duckdb_file_seek, duckdb_open_file, FILE_FLAGS_READ,
+};
 use std::ffi::CString;
 use std::io::{ErrorKind, Read, Seek, SeekFrom};
-use crate::duckdb::bindings::{duckdb_client_context, duckdb_file_get_size, duckdb_file_handle, duckdb_file_read, duckdb_file_seek, duckdb_open_file, FILE_FLAGS_READ};
 
 pub struct FileHandle {
     ptr: duckdb_file_handle,
@@ -24,9 +27,7 @@ impl FileHandle {
 
 impl Read for FileHandle {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let read = unsafe {
-            duckdb_file_read(self.ptr, buf.as_mut_ptr().cast(), buf.len() as i64)
-        };
+        let read = unsafe { duckdb_file_read(self.ptr, buf.as_mut_ptr().cast(), buf.len() as i64) };
         if read < 0 {
             Err(std::io::Error::from(ErrorKind::Other))
         } else {

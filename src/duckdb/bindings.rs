@@ -1,13 +1,18 @@
-use std::ffi::{c_char, c_void};
 use libduckdb_sys::*;
+use std::ffi::{c_char, c_void};
 
 #[allow(non_camel_case_types)]
 pub type duckdb_file_handle = *mut c_void;
 #[allow(non_camel_case_types)]
 pub type duckdb_client_context = *mut c_void;
 #[allow(non_camel_case_types)]
-pub type duckdb_table_function2_t = Option<unsafe extern "C" fn(
-    ctx: duckdb_client_context, info: duckdb_function_info, output: duckdb_data_chunk)>;
+pub type duckdb_table_function2_t = Option<
+    unsafe extern "C" fn(
+        ctx: duckdb_client_context,
+        info: duckdb_function_info,
+        output: duckdb_data_chunk,
+    ),
+>;
 
 pub type FileOpenFlags = u8;
 
@@ -36,7 +41,8 @@ extern "C" {
     );
 
     pub fn duckdb_register_table_function2(
-        con: duckdb_connection, function: duckdb_table_function
+        con: duckdb_connection,
+        function: duckdb_table_function,
     ) -> duckdb_state;
 
     pub fn duckdb_function2_get_bind_data(info: duckdb_function_info) -> *mut c_void;
@@ -49,20 +55,11 @@ extern "C" {
         flags: FileOpenFlags,
     ) -> duckdb_file_handle;
 
-    pub fn duckdb_file_get_size(
-        handle: duckdb_file_handle,
-    ) -> i64;
+    pub fn duckdb_file_get_size(handle: duckdb_file_handle) -> i64;
 
-    pub fn duckdb_file_read(
-        handle: duckdb_file_handle,
-        buffer: *mut c_void,
-        nr_bytes: i64,
-    ) -> i64;
+    pub fn duckdb_file_read(handle: duckdb_file_handle, buffer: *mut c_void, nr_bytes: i64) -> i64;
 
-    pub fn duckdb_file_seek(
-        handle: duckdb_file_handle,
-        pos: u64,
-    );
+    pub fn duckdb_file_seek(handle: duckdb_file_handle, pos: u64);
 }
 
 #[repr(u32)]

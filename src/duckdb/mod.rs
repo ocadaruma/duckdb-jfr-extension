@@ -3,14 +3,15 @@
 pub mod bind_info;
 pub mod bindings;
 pub mod data_chunk;
+pub mod file;
 pub mod function_info;
 pub mod init_info;
 pub mod logical_type;
 pub mod table_function;
 pub mod value;
 pub mod vector;
-pub mod file;
 
+use crate::duckdb::bindings::duckdb_register_table_function2;
 use crate::duckdb::table_function::TableFunction;
 use crate::Result;
 use anyhow::anyhow;
@@ -20,7 +21,6 @@ use libduckdb_sys::{
 };
 use std::ffi::c_void;
 use std::ptr::null_mut;
-use crate::duckdb::bindings::duckdb_register_table_function2;
 
 pub struct Database(duckdb_database);
 
