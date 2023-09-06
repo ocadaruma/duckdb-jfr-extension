@@ -16,8 +16,7 @@ use crate::duckdb::table_function::TableFunction;
 use crate::Result;
 use anyhow::anyhow;
 use libduckdb_sys::{
-    duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect,
-    duckdb_register_table_function, DuckDBSuccess, Error,
+    duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect, DuckDBSuccess, Error,
 };
 use std::ffi::c_void;
 use std::ptr::null_mut;

@@ -5,13 +5,10 @@ use crate::duckdb::bindings::{
 use crate::duckdb::logical_type::LogicalType;
 use crate::Result;
 use libduckdb_sys::{
-    duckdb_create_table_function, duckdb_destroy_table_function, duckdb_table_function,
-    duckdb_table_function_add_parameter, duckdb_table_function_bind_t,
-    duckdb_table_function_init_t, duckdb_table_function_set_bind,
-    duckdb_table_function_set_extra_info, duckdb_table_function_set_function,
-    duckdb_table_function_set_init, duckdb_table_function_set_name, duckdb_table_function_t,
+    duckdb_destroy_table_function, duckdb_table_function, duckdb_table_function_add_parameter,
+    duckdb_table_function_bind_t, duckdb_table_function_init_t, duckdb_table_function_set_name,
 };
-use std::ffi::{c_void, CString};
+use std::ffi::CString;
 
 pub struct TableFunction(duckdb_table_function);
 

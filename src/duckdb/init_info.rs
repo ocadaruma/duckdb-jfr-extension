@@ -1,8 +1,8 @@
 use crate::duckdb::logical_type::LogicalType;
 use crate::Result;
 use libduckdb_sys::{
-    duckdb_bind_add_result_column, duckdb_bind_info, duckdb_bind_set_bind_data,
-    duckdb_delete_callback_t, duckdb_init_info, duckdb_init_set_init_data,
+    duckdb_bind_add_result_column, duckdb_delete_callback_t, duckdb_init_info,
+    duckdb_init_set_init_data,
 };
 use std::ffi::{c_void, CString};
 

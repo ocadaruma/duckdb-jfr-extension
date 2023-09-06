@@ -12,28 +12,25 @@ use crate::duckdb::table_function::TableFunction;
 use crate::duckdb::vector::Vector;
 use crate::duckdb::Database;
 use crate::jfr_schema::JfrField;
-use anyhow::anyhow;
-use jfrs::reader::event::{Accessor, Event};
-use jfrs::reader::type_descriptor::{TickUnit, TypeDescriptor, TypePool, Unit};
+
+use jfrs::reader::event::Accessor;
+use jfrs::reader::type_descriptor::{TickUnit, Unit};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 use jfrs::reader::{Chunk, ChunkReader, JfrReader};
 use libduckdb_sys::{
     duckdb_bind_info, duckdb_bind_set_error, duckdb_data_chunk, duckdb_data_chunk_get_vector,
-    duckdb_database, duckdb_free, duckdb_function_info, duckdb_function_set_error,
-    duckdb_init_info, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child,
+    duckdb_free, duckdb_function_info, duckdb_function_set_error, duckdb_init_info,
+    duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child,
     duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_malloc,
     duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector,
     duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity, duckdb_vector_size, idx_t,
 };
-use rustc_hash::FxHashMap;
-use std::collections::HashMap;
+
 use std::ffi::{c_char, c_void, CStr, CString};
-use std::fmt::format;
+
 use std::fs::File;
-use std::io::Cursor;
+
 use std::mem::{forget, size_of, ManuallyDrop};
-use std::ptr::{null_mut, slice_from_raw_parts_mut};
-use std::slice::from_raw_parts_mut;
 
 type Result<T> = anyhow::Result<T>;
 
@@ -97,7 +94,7 @@ unsafe fn bind(info: duckdb_bind_info) -> Result<()> {
     // let mut reader = JfrReader::new(Cursor::new(SAMPLE_FILE));
     let (_, chunk) = reader.chunks().flatten().next().unwrap();
 
-    let (root, count) = JfrField::from_chunk(&chunk, tablename)?;
+    let (root, _count) = JfrField::from_chunk(&chunk, tablename)?;
     for s in root.children.iter() {
         info.add_result_column(s.name.as_str(), &create_type(s)?);
     }
@@ -403,7 +400,7 @@ unsafe fn populate_column(
 }
 
 unsafe fn assign<T>(vector: duckdb_vector, row_idx: usize, value: T) {
-    let mut vector = Vector::from(vector);
+    let vector = Vector::from(vector);
     vector.get_data::<T>().offset(row_idx as isize).write(value);
 }
 
