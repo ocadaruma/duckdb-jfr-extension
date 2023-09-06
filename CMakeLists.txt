@@ -16,7 +16,7 @@
 #
 #corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
 #
-#set(ALL_SOURCES src/wrapper.hpp src/wrapper.cpp)
+#set(ALL_SOURCES src/bridge.hpp src/bridge.cpp)
 #
 #build_loadable_extension(${TARGET_NAME} ${ALL_SOURCES})
 #

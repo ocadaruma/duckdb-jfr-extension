@@ -21,8 +21,8 @@ CLIENT_FLAGS :=
 
 # These flags will make DuckDB build the extension
 EXTENSION_FLAGS= \
-#-DDUCKDB_EXTENSION_NAMES="jfr" \
-#-DDUCKDB_EXTENSION_JFR_PATH="$(PROJ_DIR)" \
+-DDUCKDB_EXTENSION_NAMES="jfr" \
+-DDUCKDB_EXTENSION_JFR_PATH="$(PROJ_DIR)" \
 #-DDUCKDB_EXTENSION_JFR_SHOULD_LINK=0
 #-DDUCKDB_EXTENSION_JFR_LOAD_TESTS=1 \
 #-DDUCKDB_EXTENSION_JFR_TEST_PATH=$(PROJ_DIR)test \
@@ -43,9 +43,18 @@ debug:
 	cmake --build build/debug --config Debug
 
 release:
-	mkdir -p build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} -S ./duckdb/ -B build/release && \
-	cmake --build build/release --config Release
+	mkdir -p build/release-wasm && \
+	emcmake cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} -S ./duckdb-wasm/lib/ -B build/release-wasm && \
+	cmake --build build/release-wasm --config Release
+
+wasm:
+	mkdir -p build/release-wasm && \
+	emcmake cmake \
+		-S ./duckdb-wasm/lib \
+		-B build/release-wasm $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} \
+		-DEXTENSION_STATIC_BUILD=1 \
+		-DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} && \
+	emmake make -C build/release-wasm -j 8 duckdb_wasm
 
 #test: test_release
 #

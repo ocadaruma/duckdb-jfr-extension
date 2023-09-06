@@ -4,3 +4,6 @@
 /build
 /cmake-build-*
 .idea
+
+.duckdbrc
+.lldbinit
