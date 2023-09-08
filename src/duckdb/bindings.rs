@@ -1,19 +1,26 @@
+#![allow(non_camel_case_types)]
+
 use libduckdb_sys::*;
 use std::ffi::{c_char, c_void};
 
-#[allow(non_camel_case_types)]
 pub type duckdb_file_handle = *mut c_void;
-#[allow(non_camel_case_types)]
 pub type duckdb_client_context = *mut c_void;
-#[allow(non_camel_case_types)]
+pub type duckdb_scalar_function = *mut c_void;
+pub type duckdb_expression_state = *mut c_void;
 pub type duckdb_table_function2_bind_t =
     Option<unsafe extern "C" fn(ctx: duckdb_client_context, info: duckdb_bind_info)>;
-#[allow(non_camel_case_types)]
 pub type duckdb_table_function2_t = Option<
     unsafe extern "C" fn(
         ctx: duckdb_client_context,
         info: duckdb_function_info,
         output: duckdb_data_chunk,
+    ),
+>;
+pub type duckdb_scalar_function_t = Option<
+    unsafe extern "C" fn(
+        args: duckdb_data_chunk,
+        state: duckdb_expression_state,
+        result: duckdb_vector,
     ),
 >;
 
@@ -71,6 +78,18 @@ extern "C" {
     pub fn duckdb_file_seek(handle: duckdb_file_handle, pos: u64);
 
     pub fn duckdb_file_close(handle: duckdb_file_handle);
+
+    pub fn duckdb_create_scalar_function(name: *const c_char, return_type: duckdb_logical_type) -> duckdb_scalar_function;
+
+    pub fn duckdb_scalar_function_add_parameter(function: duckdb_scalar_function, ty: duckdb_logical_type);
+
+    pub fn duckdb_scalar_function_set_function(scalar_function: duckdb_scalar_function, function: duckdb_scalar_function_t);
+
+    pub fn duckdb_register_scalar_function(con: duckdb_connection, scalar_function: duckdb_scalar_function) -> duckdb_state;
+
+    pub fn duckdb_destroy_scalar_function(function: *mut duckdb_scalar_function);
+
+    pub fn duckdb_get_string(vector: duckdb_vector, index: idx_t) -> *const c_char;
 }
 
 #[repr(u32)]

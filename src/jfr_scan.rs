@@ -53,6 +53,7 @@ unsafe fn bind(context: duckdb_client_context, info: duckdb_bind_info) -> Result
     let tablename = param1.get_varchar()?;
 
     let mut reader = JfrReader::new(FileHandle::open(context, filename));
+    // TODO
     let (_, chunk) = reader.chunks().flatten().next().unwrap();
 
     let (root, _count) = JfrField::from_chunk(&chunk, tablename)?;

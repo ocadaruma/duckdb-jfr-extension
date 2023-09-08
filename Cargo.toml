@@ -11,6 +11,7 @@ libduckdb-sys = "0.8.1"
 jfrs = { version = "0.2.1", features = ["cstring"] }
 rustc-hash = "1.1.0"
 anyhow = "1.0.72"
+regex = "1.9.4"
 
 [build-dependencies]
 build_script = "0.2.0"

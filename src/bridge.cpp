@@ -1,7 +1,9 @@
 #include "duckdb.hpp"
 #include "duckdb/main/capi/capi_internal.hpp"
+#include "duckdb/function/scalar_function.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
+#include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include "bridge.hpp"
 
 #include <iostream>
@@ -199,8 +201,8 @@ static duckdb::child_list_t<duckdb::LogicalType> getVector(
 
 extern "C" {
 
-void jfr_scan_create_view(duckdb_client_context context, const char* filename, const char* tablename) {
-    auto ctx = (duckdb::ClientContext *)context;
+void jfr_scan_create_view(duckdb_client_context context, const char *filename, const char *tablename) {
+    auto ctx = (duckdb::ClientContext *) context;
     auto conn = duckdb::Connection(ctx->db->GetDatabase(*ctx));
     conn.TableFunction("jfr_scan", {Value(filename), Value(tablename)})
             ->CreateView(tablename, true, false);
@@ -220,8 +222,8 @@ void duckdb_table_function2_set_function(
     if (!table_function || !function) {
         return;
     }
-    auto tf = (duckdb::TableFunction *)table_function;
-    auto info = (bridge::CTableFunctionInfo *)tf->function_info.get();
+    auto tf = (duckdb::TableFunction *) table_function;
+    auto info = (bridge::CTableFunctionInfo *) tf->function_info.get();
     info->function = function;
 }
 
@@ -229,8 +231,8 @@ void duckdb_table_function2_set_bind(duckdb_table_function function, duckdb_tabl
     if (!function || !bind) {
         return;
     }
-    auto tf = (duckdb::TableFunction *)function;
-    auto info = (bridge::CTableFunctionInfo *)tf->function_info.get();
+    auto tf = (duckdb::TableFunction *) function;
+    auto info = (bridge::CTableFunctionInfo *) tf->function_info.get();
     info->bind = bind;
 }
 
@@ -238,8 +240,8 @@ void duckdb_table_function2_set_init(duckdb_table_function function, duckdb_tabl
     if (!function || !init) {
         return;
     }
-    auto tf = (duckdb::TableFunction *)function;
-    auto info = (bridge::CTableFunctionInfo *)tf->function_info.get();
+    auto tf = (duckdb::TableFunction *) function;
+    auto info = (bridge::CTableFunctionInfo *) tf->function_info.get();
     info->init = init;
 }
 
@@ -247,9 +249,9 @@ duckdb_state duckdb_register_table_function2(duckdb_connection connection, duckd
     if (!connection || !function) {
         return DuckDBError;
     }
-    auto con = (duckdb::Connection *)connection;
-    auto tf = (duckdb::TableFunction *)function;
-    auto info = (bridge::CTableFunctionInfo *)tf->function_info.get();
+    auto con = (duckdb::Connection *) connection;
+    auto tf = (duckdb::TableFunction *) function;
+    auto info = (bridge::CTableFunctionInfo *) tf->function_info.get();
     if (tf->name.empty() || !info->bind || !info->init || !info->function) {
         return DuckDBError;
     }
@@ -267,7 +269,7 @@ void *duckdb_function2_get_bind_data(duckdb_function_info info) {
     if (!info) {
         return nullptr;
     }
-    auto function_info = (bridge::CTableInternalFunctionInfo *)info;
+    auto function_info = (bridge::CTableInternalFunctionInfo *) info;
     return function_info->bind_data.bind_data;
 }
 
@@ -275,7 +277,7 @@ void *duckdb_function2_get_init_data(duckdb_function_info info) {
     if (!info) {
         return nullptr;
     }
-    auto function_info = (bridge::CTableInternalFunctionInfo *)info;
+    auto function_info = (bridge::CTableInternalFunctionInfo *) info;
     return function_info->init_data.init_data;
 }
 
@@ -286,28 +288,84 @@ duckdb_file_handle duckdb_open_file(duckdb_client_context context, const char *p
 }
 
 int64_t duckdb_file_get_size(duckdb_file_handle handle) {
-    return ((duckdb::FileHandle *)handle)->GetFileSize();
+    return ((duckdb::FileHandle *) handle)->GetFileSize();
 }
 
 int64_t duckdb_file_read(duckdb_file_handle handle, void *buffer, int64_t nr_bytes) {
-    return ((duckdb::FileHandle *)handle)->Read(buffer, nr_bytes);
+    return ((duckdb::FileHandle *) handle)->Read(buffer, nr_bytes);
 }
 
 void duckdb_file_seek(duckdb_file_handle handle, idx_t pos) {
-    ((duckdb::FileHandle *)handle)->Seek(pos);
+    ((duckdb::FileHandle *) handle)->Seek(pos);
 }
 
 void duckdb_file_close(duckdb_file_handle handle) {
-    delete (duckdb::FileHandle *)handle;
+    delete (duckdb::FileHandle *) handle;
 }
 
 duckdb_logical_type duckdb_create_struct_type(
         idx_t n_pairs,
-        const char** names,
-        const duckdb_logical_type* types) {
+        const char **names,
+        const duckdb_logical_type *types) {
     auto *stype = new duckdb::LogicalType;
     *stype = duckdb::LogicalType::STRUCT(getVector(n_pairs, names, types));
     return reinterpret_cast<duckdb_logical_type>(stype);
 }
+
+duckdb_scalar_function duckdb_create_scalar_function(const char *name, duckdb_logical_type return_type) {
+    auto logical_type = (duckdb::LogicalType *) return_type;
+    auto function = new duckdb::ScalarFunction(name, {}, *logical_type, nullptr);
+    return function;
 }
 
+void duckdb_scalar_function_add_parameter(duckdb_scalar_function function, duckdb_logical_type type) {
+    if (!function || !type) {
+        return;
+    }
+    auto sf = (duckdb::ScalarFunction *) function;
+    auto logical_type = (duckdb::LogicalType *) type;
+    sf->arguments.push_back(*logical_type);
+}
+
+void duckdb_scalar_function_set_function(duckdb_scalar_function scalar_function, duckdb_scalar_function_t function) {
+    if (!scalar_function || !function) {
+        return;
+    }
+    auto sf = (duckdb::ScalarFunction *) scalar_function;
+    sf->function = function;
+}
+
+duckdb_state duckdb_register_scalar_function(duckdb_connection connection, duckdb_scalar_function function) {
+    if (!connection || !function) {
+        return DuckDBError;
+    }
+    auto con = (duckdb::Connection *) connection;
+    auto sf = (duckdb::ScalarFunction *) function;
+    if (sf->name.empty() || !sf->function) {
+        return DuckDBError;
+    }
+    con->context->RunFunctionInTransaction([&]() {
+        auto &catalog = duckdb::Catalog::GetSystemCatalog(*con->context);
+        duckdb::CreateScalarFunctionInfo sf_info(*sf);
+
+        // create the function in the catalog
+        catalog.CreateFunction(*con->context, sf_info);
+    });
+    return DuckDBSuccess;
+}
+
+void duckdb_destroy_scalar_function(duckdb_scalar_function *function) {
+    if (function && *function) {
+        auto sf = (duckdb::ScalarFunction *) *function;
+        delete sf;
+        *function = nullptr;
+    }
+}
+
+const char* duckdb_get_string(duckdb::Vector &vector, idx_t index) {
+    auto str = duckdb::ConstantVector::GetData<duckdb::string_t>(vector)[index].GetString();
+    std::cout << "duckdb_get_string: " << str << std::endl;
+    return str.c_str();
+}
+
+}

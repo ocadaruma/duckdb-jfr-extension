@@ -6,8 +6,11 @@
 extern "C" {
 typedef void *duckdb_file_handle;
 typedef void *duckdb_client_context;
+typedef void *duckdb_scalar_function;
+typedef void *duckdb_expression_state;
 typedef void (*duckdb_table_function2_bind_t)(duckdb_client_context ctx, duckdb_bind_info info);
 typedef void (*duckdb_table_function2_t)(duckdb_client_context ctx, duckdb_function_info info, duckdb_data_chunk output);
+typedef void (*duckdb_scalar_function_t)(duckdb::DataChunk &, duckdb::ExpressionState &, duckdb::Vector &);
 
 void jfr_scan_create_view(
         duckdb_client_context,
@@ -35,4 +38,13 @@ int64_t duckdb_file_read(duckdb_file_handle handle, void *buffer, int64_t nr_byt
 void duckdb_file_seek(duckdb_file_handle handle, idx_t pos);
 void duckdb_file_close(duckdb_file_handle handle);
 
+//== C APIs for scalar functions
+duckdb_scalar_function duckdb_create_scalar_function(const char *name, duckdb_logical_type return_type);
+void duckdb_scalar_function_add_parameter(duckdb_scalar_function function, duckdb_logical_type type);
+void duckdb_scalar_function_set_function(duckdb_scalar_function scalar_function, duckdb_scalar_function_t function);
+duckdb_state duckdb_register_scalar_function(duckdb_connection connection, duckdb_scalar_function function);
+void duckdb_destroy_scalar_function(duckdb_scalar_function *function);
+
+//== C APIs for strings
+const char* duckdb_get_string(duckdb::Vector &vector, idx_t index);
 }

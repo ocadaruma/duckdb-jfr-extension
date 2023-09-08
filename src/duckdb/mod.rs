@@ -10,8 +10,9 @@ pub mod logical_type;
 pub mod table_function;
 pub mod value;
 pub mod vector;
+pub mod scalar_function;
 
-use crate::duckdb::bindings::duckdb_register_table_function2;
+use crate::duckdb::bindings::{duckdb_register_scalar_function, duckdb_register_table_function2};
 use crate::duckdb::table_function::TableFunction;
 use crate::Result;
 use anyhow::anyhow;
@@ -22,6 +23,7 @@ use libduckdb_sys::{
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr::null_mut;
+use crate::duckdb::scalar_function::ScalarFunction;
 
 pub struct Database(duckdb_database);
 
@@ -54,6 +56,15 @@ impl Connection {
 
     pub fn register_table_function(&self, f: &TableFunction) -> Result<()> {
         let r = unsafe { duckdb_register_table_function2(self.0, f.ptr()) };
+        if r == DuckDBSuccess {
+            Ok(())
+        } else {
+            Err(anyhow!(Error::new(r)))
+        }
+    }
+
+    pub fn register_scalar_function(&self, f: &ScalarFunction) -> Result<()> {
+        let r = unsafe { duckdb_register_scalar_function(self.0, f.ptr()) };
         if r == DuckDBSuccess {
             Ok(())
         } else {
