@@ -13,7 +13,7 @@ use libduckdb_sys::{
     duckdb_function_set_error, duckdb_init_info,
 };
 use std::ffi::{c_char, CStr, CString};
-use std::fs::File;
+
 
 pub fn build_table_function_def() -> TableFunction {
     let table_function = TableFunction::new();

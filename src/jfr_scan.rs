@@ -23,7 +23,7 @@ use libduckdb_sys::{
     duckdb_vector_size, idx_t,
 };
 use std::ffi::{c_char, CStr, CString};
-use std::fs::File;
+
 use std::mem::{forget, ManuallyDrop};
 
 pub fn build_table_function_def() -> TableFunction {
