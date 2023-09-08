@@ -9,7 +9,7 @@ typedef void *duckdb_client_context;
 typedef void (*duckdb_table_function2_t)(duckdb_client_context ctx, duckdb_function_info info, duckdb_data_chunk output);
 
 void jfr_scan_create_view(
-        duckdb::Connection &connection,
+        duckdb_client_context,
         const char* filename,
         const char* tablename);
 

@@ -15,10 +15,9 @@ use crate::duckdb::bindings::duckdb_register_table_function2;
 use crate::duckdb::table_function::TableFunction;
 use crate::Result;
 use anyhow::anyhow;
-use libduckdb_sys::{
-    duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect, DuckDBSuccess, Error,
-};
+use libduckdb_sys::{duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect, duckdb_malloc, DuckDBSuccess, Error};
 use std::ffi::c_void;
+use std::mem::size_of;
 use std::ptr::null_mut;
 
 pub struct Database(duckdb_database);
@@ -66,4 +65,8 @@ impl Drop for Connection {
             unsafe { duckdb_disconnect(&mut self.0) }
         }
     }
+}
+
+pub unsafe fn malloc_struct<T>() -> *mut T {
+    duckdb_malloc(size_of::<T>()).cast::<T>()
 }

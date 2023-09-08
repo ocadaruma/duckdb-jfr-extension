@@ -18,7 +18,7 @@ pub type FileOpenFlags = u8;
 
 extern "C" {
     pub fn jfr_scan_create_view(
-        conn: *mut c_void,
+        context: duckdb_client_context,
         filename: *const c_char,
         tablename: *const c_char,
     );
