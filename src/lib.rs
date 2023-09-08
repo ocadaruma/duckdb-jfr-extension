@@ -1,12 +1,10 @@
 mod duckdb;
-mod jfr_schema;
-mod jfr_scan;
 mod jfr_attach;
+mod jfr_scan;
+mod jfr_schema;
 
 use crate::duckdb::Database;
-use libduckdb_sys::{
-    duckdb_library_version
-};
+use libduckdb_sys::duckdb_library_version;
 
 use std::ffi::{c_char, c_void};
 
@@ -19,6 +17,7 @@ type Result<T> = anyhow::Result<T>;
 // - interval support
 // - projection pushdown
 // - cleanup comments
+// - malloc/free
 
 #[no_mangle]
 pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: *mut c_void) {

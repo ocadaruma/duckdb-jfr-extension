@@ -1,13 +1,4 @@
-use std::ffi::{c_char, CStr, CString};
-use std::fs::File;
-use std::mem::{forget, ManuallyDrop};
-use jfrs::reader::{Chunk, ChunkReader, JfrReader};
-use jfrs::reader::event::Accessor;
-use jfrs::reader::type_descriptor::{TickUnit, Unit};
-use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
-use libduckdb_sys::{duckdb_bind_info, duckdb_bind_set_error, duckdb_data_chunk, duckdb_data_chunk_get_vector, duckdb_free, duckdb_function_info, duckdb_function_set_error, duckdb_init_info, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity, duckdb_vector_size, idx_t};
 use crate::duckdb::bind_info::BindInfo;
-use crate::Result;
 use crate::duckdb::bindings::{duckdb_client_context, LogicalTypeId};
 use crate::duckdb::data_chunk::DataChunk;
 use crate::duckdb::file::FileHandle;
@@ -18,6 +9,22 @@ use crate::duckdb::malloc_struct;
 use crate::duckdb::table_function::TableFunction;
 use crate::duckdb::vector::Vector;
 use crate::jfr_schema::JfrField;
+use crate::Result;
+use jfrs::reader::event::Accessor;
+use jfrs::reader::type_descriptor::{TickUnit, Unit};
+use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
+use jfrs::reader::{Chunk, ChunkReader, JfrReader};
+use libduckdb_sys::{
+    duckdb_bind_info, duckdb_bind_set_error, duckdb_data_chunk, duckdb_data_chunk_get_vector,
+    duckdb_free, duckdb_function_info, duckdb_function_set_error, duckdb_init_info,
+    duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve,
+    duckdb_list_vector_set_size, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid,
+    duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity,
+    duckdb_vector_size, idx_t,
+};
+use std::ffi::{c_char, CStr, CString};
+use std::fs::File;
+use std::mem::{forget, ManuallyDrop};
 
 pub fn build_table_function_def() -> TableFunction {
     let table_function = TableFunction::new();
@@ -30,22 +37,22 @@ pub fn build_table_function_def() -> TableFunction {
     table_function
 }
 
-unsafe extern "C" fn jfr_scan_bind(info: duckdb_bind_info) {
-    if let Err(err) = bind(info) {
+unsafe extern "C" fn jfr_scan_bind(context: duckdb_client_context, info: duckdb_bind_info) {
+    if let Err(err) = bind(context, info) {
         if let Ok(cstr) = CString::new(err.to_string()) {
             duckdb_bind_set_error(info, cstr.into_raw());
         }
     }
 }
 
-unsafe fn bind(info: duckdb_bind_info) -> Result<()> {
+unsafe fn bind(context: duckdb_client_context, info: duckdb_bind_info) -> Result<()> {
     let info = BindInfo::from(info);
 
     let (param0, param1) = (info.get_parameter(0), info.get_parameter(1));
     let filename = param0.get_varchar()?;
     let tablename = param1.get_varchar()?;
 
-    let mut reader = JfrReader::new(File::open(filename)?);
+    let mut reader = JfrReader::new(FileHandle::open(context, filename));
     let (_, chunk) = reader.chunks().flatten().next().unwrap();
 
     let (root, _count) = JfrField::from_chunk(&chunk, tablename)?;

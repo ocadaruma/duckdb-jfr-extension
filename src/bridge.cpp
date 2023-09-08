@@ -25,7 +25,7 @@ namespace bridge {
             delete_callback = nullptr;
         }
 
-        duckdb_table_function_bind_t bind = nullptr;
+        duckdb_table_function2_bind_t bind = nullptr;
         duckdb_table_function_init_t init = nullptr;
         duckdb_table_function_init_t local_init = nullptr;
         duckdb_table_function2_t function = nullptr;
@@ -128,7 +128,7 @@ namespace bridge {
         D_ASSERT(info.bind && info.function && info.init);
         auto result = make_uniq<CTableBindData>(info);
         CTableInternalBindInfo bind_info(context, input, return_types, names, *result, info);
-        info.bind(&bind_info);
+        info.bind(&context, &bind_info);
         if (!bind_info.success) {
             throw Exception(bind_info.error);
         }
@@ -225,7 +225,7 @@ void duckdb_table_function2_set_function(
     info->function = function;
 }
 
-void duckdb_table_function2_set_bind(duckdb_table_function function, duckdb_table_function_bind_t bind) {
+void duckdb_table_function2_set_bind(duckdb_table_function function, duckdb_table_function2_bind_t bind) {
     if (!function || !bind) {
         return;
     }

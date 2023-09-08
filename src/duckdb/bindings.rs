@@ -6,6 +6,9 @@ pub type duckdb_file_handle = *mut c_void;
 #[allow(non_camel_case_types)]
 pub type duckdb_client_context = *mut c_void;
 #[allow(non_camel_case_types)]
+pub type duckdb_table_function2_bind_t =
+    Option<unsafe extern "C" fn(ctx: duckdb_client_context, info: duckdb_bind_info)>;
+#[allow(non_camel_case_types)]
 pub type duckdb_table_function2_t = Option<
     unsafe extern "C" fn(
         ctx: duckdb_client_context,
@@ -38,7 +41,7 @@ extern "C" {
 
     pub fn duckdb_table_function2_set_bind(
         table_function: duckdb_table_function,
-        bind: duckdb_table_function_bind_t,
+        bind: duckdb_table_function2_bind_t,
     );
 
     pub fn duckdb_table_function2_set_init(

@@ -1,8 +1,3 @@
-use std::ffi::{c_char, CStr, CString};
-use std::fs::File;
-use jfrs::reader::JfrReader;
-use jfrs::reader::type_descriptor::TypeDescriptor;
-use libduckdb_sys::{duckdb_bind_info, duckdb_bind_set_error, duckdb_data_chunk, duckdb_function_info, duckdb_function_set_error, duckdb_init_info};
 use crate::duckdb::bind_info::BindInfo;
 use crate::duckdb::bindings::{duckdb_client_context, jfr_scan_create_view, LogicalTypeId};
 use crate::duckdb::file::FileHandle;
@@ -11,6 +6,14 @@ use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::malloc_struct;
 use crate::duckdb::table_function::TableFunction;
 use crate::Result;
+use jfrs::reader::type_descriptor::TypeDescriptor;
+use jfrs::reader::JfrReader;
+use libduckdb_sys::{
+    duckdb_bind_info, duckdb_bind_set_error, duckdb_data_chunk, duckdb_function_info,
+    duckdb_function_set_error, duckdb_init_info,
+};
+use std::ffi::{c_char, CStr, CString};
+use std::fs::File;
 
 pub fn build_table_function_def() -> TableFunction {
     let table_function = TableFunction::new();
@@ -22,19 +25,19 @@ pub fn build_table_function_def() -> TableFunction {
     table_function
 }
 
-unsafe extern "C" fn jfr_attach_bind(info: duckdb_bind_info) {
-    if let Err(err) = bind(info) {
+unsafe extern "C" fn jfr_attach_bind(context: duckdb_client_context, info: duckdb_bind_info) {
+    if let Err(err) = bind(context, info) {
         if let Ok(cstr) = CString::new(err.to_string()) {
             duckdb_bind_set_error(info, cstr.into_raw());
         }
     }
 }
 
-unsafe extern "C" fn jfr_attach_init(info: duckdb_init_info) {
+unsafe extern "C" fn jfr_attach_init(_info: duckdb_init_info) {
     // noop
 }
 
-unsafe fn bind(info: duckdb_bind_info) -> Result<()> {
+unsafe fn bind(_context: duckdb_client_context, info: duckdb_bind_info) -> Result<()> {
     let info = BindInfo::from(info);
 
     let param0 = info.get_parameter(0);
@@ -51,7 +54,7 @@ unsafe fn bind(info: duckdb_bind_info) -> Result<()> {
 unsafe extern "C" fn jfr_attach_func(
     context: duckdb_client_context,
     info: duckdb_function_info,
-    _output_raw: duckdb_data_chunk
+    _output_raw: duckdb_data_chunk,
 ) {
     if let Err(err) = attach(context, info) {
         if let Ok(cstr) = CString::new(err.to_string()) {
@@ -60,10 +63,7 @@ unsafe extern "C" fn jfr_attach_func(
     }
 }
 
-unsafe fn attach(
-    context: duckdb_client_context,
-    info: duckdb_function_info,
-) -> Result<()> {
+unsafe fn attach(context: duckdb_client_context, info: duckdb_function_info) -> Result<()> {
     let info = FunctionInfo::from(info);
     let bind_data = info.get_bind_data::<AttachBindData>().as_mut().unwrap();
 
@@ -85,7 +85,11 @@ unsafe fn attach(
                 // https://github.com/adoptium/jdk11u/blob/jdk-11.0.21%2B6/src/jdk.jfr/share/classes/jdk/jfr/internal/MetadataReader.java#L223
                 // https://github.com/adoptium/jdk11u/blob/jdk-11.0.21%2B6/src/jdk.jfr/share/classes/jdk/jfr/internal/MetadataReader.java#L260-L261
                 Some("jdk.jfr.Event") if !tpe.fields.is_empty() => {
-                    jfr_scan_create_view(context, filename.as_ptr(), CString::new(tpe.name())?.as_ptr());
+                    jfr_scan_create_view(
+                        context,
+                        filename.as_ptr(),
+                        CString::new(tpe.name())?.as_ptr(),
+                    );
                 }
                 _ => {}
             }

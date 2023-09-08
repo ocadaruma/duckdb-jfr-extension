@@ -6,6 +6,7 @@
 extern "C" {
 typedef void *duckdb_file_handle;
 typedef void *duckdb_client_context;
+typedef void (*duckdb_table_function2_bind_t)(duckdb_client_context ctx, duckdb_bind_info info);
 typedef void (*duckdb_table_function2_t)(duckdb_client_context ctx, duckdb_function_info info, duckdb_data_chunk output);
 
 void jfr_scan_create_view(
@@ -17,7 +18,7 @@ void jfr_scan_create_view(
 //== original duckdb C APIs to support init/bind/function variants which accepts ClientContext
 duckdb_table_function duckdb_create_table_function2();
 void duckdb_table_function2_set_function(duckdb_table_function table_function, duckdb_table_function2_t function);
-void duckdb_table_function2_set_bind(duckdb_table_function table_function, duckdb_table_function_bind_t bind);
+void duckdb_table_function2_set_bind(duckdb_table_function table_function, duckdb_table_function2_bind_t bind);
 void duckdb_table_function2_set_init(duckdb_table_function table_function, duckdb_table_function_init_t init);
 duckdb_state duckdb_register_table_function2(duckdb_connection connection, duckdb_table_function function);
 void *duckdb_function2_get_bind_data(duckdb_function_info info);

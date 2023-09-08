@@ -1,5 +1,5 @@
 use crate::duckdb::bindings::{
-    duckdb_create_table_function2, duckdb_table_function2_set_bind,
+    duckdb_create_table_function2, duckdb_table_function2_bind_t, duckdb_table_function2_set_bind,
     duckdb_table_function2_set_function, duckdb_table_function2_set_init, duckdb_table_function2_t,
 };
 use crate::duckdb::logical_type::LogicalType;
@@ -40,7 +40,7 @@ impl TableFunction {
         }
     }
 
-    pub fn set_bind(&self, f: duckdb_table_function_bind_t) {
+    pub fn set_bind(&self, f: duckdb_table_function2_bind_t) {
         unsafe {
             duckdb_table_function2_set_bind(self.0, f);
         }

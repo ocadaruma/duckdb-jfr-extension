@@ -15,7 +15,10 @@ use crate::duckdb::bindings::duckdb_register_table_function2;
 use crate::duckdb::table_function::TableFunction;
 use crate::Result;
 use anyhow::anyhow;
-use libduckdb_sys::{duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect, duckdb_malloc, DuckDBSuccess, Error};
+use libduckdb_sys::{
+    duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect, duckdb_malloc,
+    DuckDBSuccess, Error,
+};
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr::null_mut;
