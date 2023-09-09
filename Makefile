@@ -24,9 +24,9 @@ lldb: loadable-extension
 	lldb $(PROJECT_DIR)/duckdb-downloaded-lib/duckdb --local-lldbinit -- -unsigned -init .duckdbrc
 
 fmt:
+	cargo fix --all
 	cargo fmt --all
 	cargo clippy --all
-	cargo fix --all
 
 test:
 	cargo test
