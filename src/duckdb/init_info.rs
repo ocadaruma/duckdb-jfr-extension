@@ -1,10 +1,8 @@
 use crate::duckdb::bindings::{
-    duckdb_bind_add_result_column, duckdb_delete_callback_t, duckdb_init_info,
-    duckdb_init_set_init_data,
+    duckdb_delete_callback_t, duckdb_init_info, duckdb_init_set_init_data,
 };
-use crate::duckdb::logical_type::LogicalType;
-use crate::Result;
-use std::ffi::{c_void, CString};
+
+use std::ffi::c_void;
 
 pub struct InitInfo(duckdb_init_info);
 

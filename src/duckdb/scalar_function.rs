@@ -1,9 +1,7 @@
 use crate::duckdb::bindings::{
-    duckdb_create_scalar_function, duckdb_create_table_function2, duckdb_destroy_scalar_function,
-    duckdb_scalar_function, duckdb_scalar_function_add_parameter,
-    duckdb_scalar_function_set_function, duckdb_scalar_function_t, duckdb_table_function2_bind_t,
-    duckdb_table_function2_set_bind, duckdb_table_function2_set_function,
-    duckdb_table_function2_set_init, duckdb_table_function2_t,
+    duckdb_create_scalar_function, duckdb_destroy_scalar_function, duckdb_scalar_function,
+    duckdb_scalar_function_add_parameter, duckdb_scalar_function_set_function,
+    duckdb_scalar_function_t,
 };
 use crate::duckdb::logical_type::LogicalType;
 use crate::Result;

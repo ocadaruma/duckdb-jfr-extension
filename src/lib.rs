@@ -45,7 +45,7 @@ unsafe fn init(db: *mut c_void) -> Result<()> {
 }
 
 fn jfr_stacktrace_match_def() -> Result<ScalarFunction> {
-    let mut f = ScalarFunction::new(
+    let f = ScalarFunction::new(
         "stacktrace_matches",
         &LogicalType::new(LogicalTypeId::Boolean),
     )?;
@@ -146,7 +146,7 @@ fn stacktrace_type() -> Result<LogicalType> {
 
 unsafe extern "C" fn stacktrace_matches(
     args: duckdb_data_chunk,
-    state: duckdb_expression_state,
+    _state: duckdb_expression_state,
     result: duckdb_vector,
 ) {
     let stacktrace_vector = duckdb_data_chunk_get_vector(args, 0);
@@ -163,17 +163,17 @@ unsafe extern "C" fn stacktrace_matches(
     for i in 0..count {
         duckdb_get_string(pattern_vector, i);
         // let pattern = CStr::from_ptr(duckdb_get_string(pattern_vector, i)).to_str().expect("invalid utf8");
-        let reg = Regex::new(".*fsync.*").expect("invalid regex");
+        let _reg = Regex::new(".*fsync.*").expect("invalid regex");
 
         let entry = frames
             .get_data::<duckdb_list_entry>()
             .offset(i as isize)
             .read();
-        let mut result = false;
+        let result = false;
         // println!("entry.offset: {}, length: {}", entry.offset, entry.length);
         for j in 0..entry.length {
             // duckdb_get_string(string.ptr(), entry.offset + j);
-            let str = CStr::from_ptr(duckdb_get_string(string.ptr(), entry.offset + j))
+            let _str = CStr::from_ptr(duckdb_get_string(string.ptr(), entry.offset + j))
                 .to_str()
                 .expect("invalid utf8");
             // if reg.is_match(str) {
