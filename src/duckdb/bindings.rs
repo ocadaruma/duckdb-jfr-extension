@@ -1,96 +1,18 @@
-#![allow(non_camel_case_types)]
+#![allow(dead_code)]
+#![allow(non_upper_case_globals)]
 
-use libduckdb_sys::*;
-use std::ffi::{c_char, c_void};
-
-pub type duckdb_file_handle = *mut c_void;
-pub type duckdb_client_context = *mut c_void;
-pub type duckdb_scalar_function = *mut c_void;
-pub type duckdb_expression_state = *mut c_void;
-pub type duckdb_table_function2_bind_t =
-    Option<unsafe extern "C" fn(ctx: duckdb_client_context, info: duckdb_bind_info)>;
-pub type duckdb_table_function2_t = Option<
-    unsafe extern "C" fn(
-        ctx: duckdb_client_context,
-        info: duckdb_function_info,
-        output: duckdb_data_chunk,
-    ),
->;
-pub type duckdb_scalar_function_t = Option<
-    unsafe extern "C" fn(
-        args: duckdb_data_chunk,
-        state: duckdb_expression_state,
-        result: duckdb_vector,
-    ),
->;
-
-pub type FileOpenFlags = u8;
-
-extern "C" {
-    pub fn jfr_scan_create_view(
-        context: duckdb_client_context,
-        filename: *const c_char,
-        tablename: *const c_char,
-    );
-
-    pub fn duckdb_create_struct_type(
-        n_pairs: idx_t,
-        names: *mut *const c_char,
-        types: *const duckdb_logical_type,
-    ) -> duckdb_logical_type;
-
-    pub fn duckdb_create_table_function2() -> duckdb_table_function;
-
-    pub fn duckdb_table_function2_set_function(
-        table_function: duckdb_table_function,
-        function: duckdb_table_function2_t,
-    );
-
-    pub fn duckdb_table_function2_set_bind(
-        table_function: duckdb_table_function,
-        bind: duckdb_table_function2_bind_t,
-    );
-
-    pub fn duckdb_table_function2_set_init(
-        table_function: duckdb_table_function,
-        bind: duckdb_table_function_init_t,
-    );
-
-    pub fn duckdb_register_table_function2(
-        con: duckdb_connection,
-        function: duckdb_table_function,
-    ) -> duckdb_state;
-
-    pub fn duckdb_function2_get_bind_data(info: duckdb_function_info) -> *mut c_void;
-
-    pub fn duckdb_function2_get_init_data(info: duckdb_function_info) -> *mut c_void;
-
-    pub fn duckdb_open_file(
-        context: duckdb_client_context,
-        path: *const c_char,
-        flags: FileOpenFlags,
-    ) -> duckdb_file_handle;
-
-    pub fn duckdb_file_get_size(handle: duckdb_file_handle) -> i64;
-
-    pub fn duckdb_file_read(handle: duckdb_file_handle, buffer: *mut c_void, nr_bytes: i64) -> i64;
-
-    pub fn duckdb_file_seek(handle: duckdb_file_handle, pos: u64);
-
-    pub fn duckdb_file_close(handle: duckdb_file_handle);
-
-    pub fn duckdb_create_scalar_function(name: *const c_char, return_type: duckdb_logical_type) -> duckdb_scalar_function;
-
-    pub fn duckdb_scalar_function_add_parameter(function: duckdb_scalar_function, ty: duckdb_logical_type);
-
-    pub fn duckdb_scalar_function_set_function(scalar_function: duckdb_scalar_function, function: duckdb_scalar_function_t);
-
-    pub fn duckdb_register_scalar_function(con: duckdb_connection, scalar_function: duckdb_scalar_function) -> duckdb_state;
-
-    pub fn duckdb_destroy_scalar_function(function: *mut duckdb_scalar_function);
-
-    pub fn duckdb_get_string(vector: duckdb_vector, index: idx_t) -> *const c_char;
+#[allow(non_camel_case_types)]
+#[allow(non_snake_case)]
+#[allow(clippy::all)]
+#[allow(improper_ctypes)]
+mod bindgen {
+    include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
 }
+
+pub use bindgen::*;
+
+pub const DuckDBError: duckdb_state = duckdb_state_DuckDBError;
+pub const DuckDBSuccess: duckdb_state = duckdb_state_DuckDBSuccess;
 
 #[repr(u32)]
 pub enum LogicalTypeId {

@@ -1,4 +1,4 @@
-use libduckdb_sys::{
+use crate::duckdb::bindings::{
     duckdb_vector, duckdb_vector_assign_string_element_len, duckdb_vector_get_data, idx_t,
 };
 use std::ffi::c_char;

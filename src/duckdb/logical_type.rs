@@ -1,9 +1,8 @@
-use crate::duckdb::bindings::{duckdb_create_struct_type, LogicalTypeId};
-use crate::Result;
-use libduckdb_sys::{
-    duckdb_create_list_type, duckdb_create_logical_type, duckdb_destroy_logical_type,
-    duckdb_logical_type, duckdb_type,
+use crate::duckdb::bindings::{
+    duckdb_create_list_type, duckdb_create_logical_type, duckdb_create_struct_type,
+    duckdb_destroy_logical_type, duckdb_logical_type, duckdb_type, LogicalTypeId,
 };
+use crate::Result;
 use std::ffi::CString;
 
 pub struct LogicalType(duckdb_logical_type);

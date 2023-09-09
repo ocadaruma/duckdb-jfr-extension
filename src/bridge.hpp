@@ -10,7 +10,7 @@ typedef void *duckdb_scalar_function;
 typedef void *duckdb_expression_state;
 typedef void (*duckdb_table_function2_bind_t)(duckdb_client_context ctx, duckdb_bind_info info);
 typedef void (*duckdb_table_function2_t)(duckdb_client_context ctx, duckdb_function_info info, duckdb_data_chunk output);
-typedef void (*duckdb_scalar_function_t)(duckdb::DataChunk &, duckdb::ExpressionState &, duckdb::Vector &);
+typedef void (*duckdb_scalar_function_t)(duckdb_data_chunk, duckdb_expression_state, duckdb_vector);
 
 void jfr_scan_create_view(
         duckdb_client_context,
@@ -25,7 +25,7 @@ void duckdb_table_function2_set_bind(duckdb_table_function table_function, duckd
 void duckdb_table_function2_set_init(duckdb_table_function table_function, duckdb_table_function_init_t init);
 duckdb_state duckdb_register_table_function2(duckdb_connection connection, duckdb_table_function function);
 void *duckdb_function2_get_bind_data(duckdb_function_info info);
-void *duckdb_function2_get_bind_data(duckdb_function_info info);
+void *duckdb_function2_get_init_data(duckdb_function_info info);
 duckdb_logical_type duckdb_create_struct_type(
         idx_t n_pairs,
         const char** names,
@@ -46,5 +46,5 @@ duckdb_state duckdb_register_scalar_function(duckdb_connection connection, duckd
 void duckdb_destroy_scalar_function(duckdb_scalar_function *function);
 
 //== C APIs for strings
-const char* duckdb_get_string(duckdb::Vector &vector, idx_t index);
+const char* duckdb_get_string(duckdb_vector vector, idx_t index);
 }

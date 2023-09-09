@@ -1,8 +1,8 @@
-use crate::duckdb::vector::Vector;
-use libduckdb_sys::{
+use crate::duckdb::bindings::{
     duckdb_data_chunk, duckdb_data_chunk_get_column_count, duckdb_data_chunk_get_vector,
     duckdb_data_chunk_set_size, idx_t,
 };
+use crate::duckdb::vector::Vector;
 
 pub struct DataChunk(duckdb_data_chunk);
 

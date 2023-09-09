@@ -332,7 +332,9 @@ void duckdb_scalar_function_set_function(duckdb_scalar_function scalar_function,
         return;
     }
     auto sf = (duckdb::ScalarFunction *) scalar_function;
-    sf->function = function;
+    sf->function = [function](duckdb::DataChunk &args, duckdb::ExpressionState &state, duckdb::Vector &result) {
+        function(reinterpret_cast<duckdb_data_chunk>(&args), &state, reinterpret_cast<duckdb_vector>(&result));
+    };
 }
 
 duckdb_state duckdb_register_scalar_function(duckdb_connection connection, duckdb_scalar_function function) {
@@ -356,15 +358,14 @@ duckdb_state duckdb_register_scalar_function(duckdb_connection connection, duckd
 
 void duckdb_destroy_scalar_function(duckdb_scalar_function *function) {
     if (function && *function) {
-        auto sf = (duckdb::ScalarFunction *) *function;
+        auto sf = (duckdb::ScalarFunction * ) * function;
         delete sf;
         *function = nullptr;
     }
 }
 
-const char* duckdb_get_string(duckdb::Vector &vector, idx_t index) {
-    auto str = duckdb::ConstantVector::GetData<duckdb::string_t>(vector)[index].GetString();
-    std::cout << "duckdb_get_string: " << str << std::endl;
+const char *duckdb_get_string(duckdb_vector vector, idx_t index) {
+    auto str = duckdb::ConstantVector::GetData<duckdb::string_t>((duckdb::Vector &) vector)[index].GetString();
     return str.c_str();
 }
 

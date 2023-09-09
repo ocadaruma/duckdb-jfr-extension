@@ -1,6 +1,6 @@
+use crate::duckdb::bindings::{duckdb_destroy_value, duckdb_get_varchar, duckdb_value};
 use crate::Result;
 use anyhow::anyhow;
-use libduckdb_sys::{duckdb_destroy_value, duckdb_get_varchar, duckdb_value};
 use std::ffi::CStr;
 
 pub struct Value(duckdb_value);

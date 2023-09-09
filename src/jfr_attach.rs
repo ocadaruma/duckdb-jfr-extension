@@ -1,5 +1,9 @@
 use crate::duckdb::bind_info::BindInfo;
-use crate::duckdb::bindings::{duckdb_client_context, jfr_scan_create_view, LogicalTypeId};
+use crate::duckdb::bindings::{
+    duckdb_bind_info, duckdb_bind_set_error, duckdb_client_context, duckdb_data_chunk,
+    duckdb_function_info, duckdb_function_set_error, duckdb_init_info, jfr_scan_create_view,
+    LogicalTypeId,
+};
 use crate::duckdb::file::FileHandle;
 use crate::duckdb::function_info::FunctionInfo;
 use crate::duckdb::logical_type::LogicalType;
@@ -8,12 +12,7 @@ use crate::duckdb::table_function::TableFunction;
 use crate::Result;
 use jfrs::reader::type_descriptor::TypeDescriptor;
 use jfrs::reader::JfrReader;
-use libduckdb_sys::{
-    duckdb_bind_info, duckdb_bind_set_error, duckdb_data_chunk, duckdb_function_info,
-    duckdb_function_set_error, duckdb_init_info,
-};
 use std::ffi::{c_char, CStr, CString};
-
 
 pub fn build_table_function_def() -> TableFunction {
     let table_function = TableFunction::new();

@@ -1,10 +1,10 @@
-use crate::duckdb::logical_type::LogicalType;
-use crate::duckdb::value::Value;
-use crate::Result;
-use libduckdb_sys::{
+use crate::duckdb::bindings::{
     duckdb_bind_add_result_column, duckdb_bind_get_parameter, duckdb_bind_info,
     duckdb_bind_set_bind_data, duckdb_delete_callback_t,
 };
+use crate::duckdb::logical_type::LogicalType;
+use crate::duckdb::value::Value;
+use crate::Result;
 use std::ffi::{c_void, CString};
 
 pub struct BindInfo(duckdb_bind_info);

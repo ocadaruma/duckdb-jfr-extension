@@ -7,23 +7,22 @@ pub mod file;
 pub mod function_info;
 pub mod init_info;
 pub mod logical_type;
+pub mod scalar_function;
 pub mod table_function;
 pub mod value;
 pub mod vector;
-pub mod scalar_function;
 
-use crate::duckdb::bindings::{duckdb_register_scalar_function, duckdb_register_table_function2};
+use crate::duckdb::bindings::{
+    duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect, duckdb_malloc,
+    duckdb_register_scalar_function, duckdb_register_table_function2, DuckDBSuccess,
+};
+use crate::duckdb::scalar_function::ScalarFunction;
 use crate::duckdb::table_function::TableFunction;
 use crate::Result;
 use anyhow::anyhow;
-use libduckdb_sys::{
-    duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect, duckdb_malloc,
-    DuckDBSuccess, Error,
-};
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr::null_mut;
-use crate::duckdb::scalar_function::ScalarFunction;
 
 pub struct Database(duckdb_database);
 
@@ -42,7 +41,7 @@ impl Database {
         if r == DuckDBSuccess {
             Ok(Connection(conn))
         } else {
-            Err(anyhow!(Error::new(r)))
+            Err(anyhow!("Error connecting to database"))
         }
     }
 }
@@ -59,7 +58,7 @@ impl Connection {
         if r == DuckDBSuccess {
             Ok(())
         } else {
-            Err(anyhow!(Error::new(r)))
+            Err(anyhow!("Error registering table function"))
         }
     }
 
@@ -68,7 +67,7 @@ impl Connection {
         if r == DuckDBSuccess {
             Ok(())
         } else {
-            Err(anyhow!(Error::new(r)))
+            Err(anyhow!("Error registering scalar function"))
         }
     }
 }

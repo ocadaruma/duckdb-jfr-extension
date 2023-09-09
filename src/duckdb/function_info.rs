@@ -1,5 +1,6 @@
-use crate::duckdb::bindings::{duckdb_function2_get_bind_data, duckdb_function2_get_init_data};
-use libduckdb_sys::duckdb_function_info;
+use crate::duckdb::bindings::{
+    duckdb_function2_get_bind_data, duckdb_function2_get_init_data, duckdb_function_info,
+};
 
 pub struct FunctionInfo(duckdb_function_info);
 

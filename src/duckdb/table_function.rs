@@ -1,12 +1,12 @@
 use crate::duckdb::bindings::{
-    duckdb_create_table_function2, duckdb_table_function2_bind_t, duckdb_table_function2_set_bind,
+    duckdb_create_table_function2, duckdb_destroy_table_function, duckdb_table_function,
+    duckdb_table_function2_bind_t, duckdb_table_function2_set_bind,
     duckdb_table_function2_set_function, duckdb_table_function2_set_init, duckdb_table_function2_t,
+    duckdb_table_function_add_parameter, duckdb_table_function_init_t,
+    duckdb_table_function_set_name,
 };
 use crate::duckdb::logical_type::LogicalType;
 use crate::Result;
-use libduckdb_sys::{
-    duckdb_destroy_table_function, duckdb_table_function, duckdb_table_function_add_parameter, duckdb_table_function_init_t, duckdb_table_function_set_name,
-};
 use std::ffi::CString;
 
 pub struct TableFunction(duckdb_table_function);

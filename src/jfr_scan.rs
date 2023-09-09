@@ -1,5 +1,12 @@
 use crate::duckdb::bind_info::BindInfo;
-use crate::duckdb::bindings::{duckdb_client_context, LogicalTypeId};
+use crate::duckdb::bindings::{
+    duckdb_bind_info, duckdb_bind_set_error, duckdb_client_context, duckdb_data_chunk,
+    duckdb_data_chunk_get_vector, duckdb_free, duckdb_function_info, duckdb_function_set_error,
+    duckdb_init_info, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve,
+    duckdb_list_vector_set_size, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid,
+    duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity,
+    duckdb_vector_size, idx_t, LogicalTypeId,
+};
 use crate::duckdb::data_chunk::DataChunk;
 use crate::duckdb::file::FileHandle;
 use crate::duckdb::function_info::FunctionInfo;
@@ -14,14 +21,6 @@ use jfrs::reader::event::Accessor;
 use jfrs::reader::type_descriptor::{TickUnit, Unit};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 use jfrs::reader::{Chunk, ChunkReader, JfrReader};
-use libduckdb_sys::{
-    duckdb_bind_info, duckdb_bind_set_error, duckdb_data_chunk, duckdb_data_chunk_get_vector,
-    duckdb_free, duckdb_function_info, duckdb_function_set_error, duckdb_init_info,
-    duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve,
-    duckdb_list_vector_set_size, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid,
-    duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity,
-    duckdb_vector_size, idx_t,
-};
 use std::ffi::{c_char, CStr, CString};
 
 use std::mem::{forget, ManuallyDrop};
