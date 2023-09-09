@@ -22,6 +22,7 @@ fn main() {
     let mut builder = bindgen::builder()
         .header("src/bridge.hpp")
         .clang_arg(format!("-I{}", duckdb_include.display()))
+        // https://github.com/rust-lang/rust-bindgen/issues/751#issuecomment-496891269
         .clang_arg("-fvisibility=default")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks));
     if env::var("TARGET").unwrap() == "wasm32-unknown-emscripten" {

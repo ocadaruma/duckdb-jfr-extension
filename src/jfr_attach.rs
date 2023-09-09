@@ -14,14 +14,14 @@ use jfrs::reader::type_descriptor::TypeDescriptor;
 use jfrs::reader::JfrReader;
 use std::ffi::{c_char, CStr, CString};
 
-pub fn build_table_function_def() -> TableFunction {
+pub fn build_table_function_def() -> Result<TableFunction> {
     let table_function = TableFunction::new();
-    table_function.set_name("jfr_attach");
+    table_function.set_name("jfr_attach")?;
     table_function.add_parameter(&LogicalType::new(LogicalTypeId::Varchar));
     table_function.set_function(Some(jfr_attach_func));
     table_function.set_bind(Some(jfr_attach_bind));
     table_function.set_init(Some(jfr_attach_init));
-    table_function
+    Ok(table_function)
 }
 
 unsafe extern "C" fn jfr_attach_bind(context: duckdb_client_context, info: duckdb_bind_info) {

@@ -25,15 +25,15 @@ use std::ffi::{c_char, CStr, CString};
 
 use std::mem::{forget, ManuallyDrop};
 
-pub fn build_table_function_def() -> TableFunction {
+pub fn build_table_function_def() -> Result<TableFunction> {
     let table_function = TableFunction::new();
-    table_function.set_name("jfr_scan");
+    table_function.set_name("jfr_scan")?;
     table_function.add_parameter(&LogicalType::new(LogicalTypeId::Varchar));
     table_function.add_parameter(&LogicalType::new(LogicalTypeId::Varchar));
     table_function.set_function(Some(jfr_scan_func));
     table_function.set_init(Some(jfr_scan_init));
     table_function.set_bind(Some(jfr_scan_bind));
-    table_function
+    Ok(table_function)
 }
 
 unsafe extern "C" fn jfr_scan_bind(context: duckdb_client_context, info: duckdb_bind_info) {

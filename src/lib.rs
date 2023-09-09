@@ -38,8 +38,8 @@ pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: *mut c_void) {
 unsafe fn init(db: *mut c_void) -> Result<()> {
     let db = Database::from(db);
     let conn = db.connect()?;
-    conn.register_table_function(&jfr_scan::build_table_function_def())?;
-    conn.register_table_function(&jfr_attach::build_table_function_def())?;
+    conn.register_table_function(&jfr_scan::build_table_function_def()?)?;
+    conn.register_table_function(&jfr_attach::build_table_function_def()?)?;
     conn.register_scalar_function(&jfr_stacktrace_match_def()?)?;
     Ok(())
 }
