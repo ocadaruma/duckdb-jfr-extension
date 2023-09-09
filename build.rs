@@ -1,4 +1,4 @@
-use build_script::{cargo_rerun_if_changed, cargo_rustc_env, cargo_rustc_link_lib, cargo_rustc_link_search};
+use build_script::{cargo_rerun_if_changed, cargo_rerun_if_env_changed, cargo_rustc_env, cargo_rustc_link_lib, cargo_rustc_link_lib_mapping, cargo_rustc_link_search};
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -8,10 +8,12 @@ fn main() {
 
     cargo_rerun_if_changed("src/bridge.hpp");
     cargo_rerun_if_changed("src/bridge.cpp");
+    cargo_rerun_if_changed(duckdb_root);
+    cargo_rerun_if_env_changed("LD_LIBRARY_PATH");
+
     cargo_rustc_link_lib("duckdb");
     if let Ok(ld_library_path) = env::var("LD_LIBRARY_PATH") {
         cargo_rustc_link_search(ld_library_path);
-        // cargo_rustc_env("LD_LIBRARY_PATH", ld_library_path);
     }
 
     let mut builder = bindgen::builder()

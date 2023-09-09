@@ -93,6 +93,7 @@ impl JfrField {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use crate::jfr_schema::JfrField;
     use jfrs::reader::type_descriptor::TickUnit;
