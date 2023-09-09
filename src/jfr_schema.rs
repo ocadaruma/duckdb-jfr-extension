@@ -22,9 +22,7 @@ impl JfrField {
         let tpe = chunk
             .metadata
             .type_pool
-            .get_types()
-            .filter(|t| t.name() == type_name)
-            .next()
+            .get_types().find(|t| t.name() == type_name)
             .ok_or(anyhow!("type not found: {:?}", type_name))?;
         let mut idx = 0;
         let mut root = Self {

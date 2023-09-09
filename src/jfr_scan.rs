@@ -163,7 +163,7 @@ unsafe fn scan(
             let (r, c) = chunk?;
             chunks.push((ManuallyDrop::new(r), ManuallyDrop::new(c)));
         }
-        if chunks.len() == 0 {
+        if chunks.is_empty() {
             init_data.done = true;
             output.set_size(0);
             return Ok(());
@@ -241,7 +241,7 @@ unsafe fn set_null(
     // Hence we also need to set validity mask for them.
     // Struct children's validity is an AND of parent validity and the child's validity.
     // refs: https://arrow.apache.org/docs/12.0/format/Columnar.html#struct-validity
-    if field.children.len() > 0 && !field.is_array {
+    if !field.children.is_empty() && !field.is_array {
         for (i, s) in field.children.iter().filter(|s| s.valid).enumerate() {
             // println!("set_null_recursive: idx: {}, name: {}, type: {}", s.idx, s.name, s.type_name);
             if vector_pool[s.idx].is_none() {
@@ -337,8 +337,7 @@ unsafe fn populate_column(
                 );
             }
             Vector::from(vector)
-                .get_data::<duckdb_list_entry>()
-                .offset(row_idx as isize)
+                .get_data::<duckdb_list_entry>().add(row_idx)
                 .write(duckdb_list_entry {
                     length: arr.len() as u64,
                     offset: child_offset as u64,
@@ -354,7 +353,7 @@ unsafe fn populate_column(
 
 unsafe fn assign<T>(vector: duckdb_vector, row_idx: usize, value: T) {
     let vector = Vector::from(vector);
-    vector.get_data::<T>().offset(row_idx as isize).write(value);
+    vector.get_data::<T>().add(row_idx).write(value);
 }
 
 struct ScanInitData {
