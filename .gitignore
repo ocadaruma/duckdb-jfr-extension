@@ -7,3 +7,5 @@
 
 .duckdbrc
 .lldbinit
+
+/duckdb-downloaded-lib

@@ -1,72 +1,35 @@
-.PHONY: all clean format debug release duckdb_debug duckdb_release pull update
+.PHONY: loadable-extension wasm download submodules start-duckdb lldb fmt test clean
 
-all: release
+PROJECT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
-MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
-PROJ_DIR := $(dir $(MKFILE_PATH))
+export LD_LIBRARY_PATH := $(PROJECT_DIR)/duckdb-downloaded-lib
+export DYLD_LIBRARY_PATH := $(PROJECT_DIR)/duckdb-downloaded-lib
 
-OSX_ARCH_FLAG=
-ifneq (${OSX_BUILD_ARCH}, "")
-	OSX_ARCH_FLAG=-DOSX_BUILD_ARCH=${OSX_BUILD_ARCH}
-endif
+download:
+	$(PROJECT_DIR)/download-duckdb-lib.sh
 
-ifeq ($(GEN),ninja)
-	GENERATOR=-G "Ninja"
-	FORCE_COLOR=-DFORCE_COLORED_OUTPUT=1
-endif
+submodules:
+	git submodule update --init --recursive
 
-BUILD_FLAGS=-DEXTENSION_STATIC_BUILD=1 -DBUILD_EXTENSIONS="tpch" ${OSX_ARCH_FLAG}
+loadable-extension: download submodules
+	cargo rustc --release --crate-type cdylib
 
-CLIENT_FLAGS :=
+wasm: download submodules
+	cargo rustc --release --target wasm32-unknown-emscripten --crate-type staticlib
 
-# These flags will make DuckDB build the extension
-EXTENSION_FLAGS= \
--DDUCKDB_EXTENSION_NAMES="jfr" \
--DDUCKDB_EXTENSION_JFR_PATH="$(PROJ_DIR)" \
-#-DDUCKDB_EXTENSION_JFR_SHOULD_LINK=0
-#-DDUCKDB_EXTENSION_JFR_LOAD_TESTS=1 \
-#-DDUCKDB_EXTENSION_JFR_TEST_PATH=$(PROJ_DIR)test \
-#-DDUCKDB_EXTENSION_JFR_INCLUDE_PATH="$(PROJ_DIR)src/include" \
+start-duckdb: loadable-extension
+	$(PROJECT_DIR)/duckdb-downloaded-lib/duckdb -unsigned -init .duckdbrc
 
-pull:
-	git submodule init
-	git submodule update --recursive --remote
+lldb: loadable-extension
+	lldb $(PROJECT_DIR)/duckdb-downloaded-lib/duckdb --local-lldbinit -- -unsigned -init .duckdbrc
+
+fmt:
+	cargo fmt --all
+	cargo clippy --all
+	cargo fix --all
+
+test:
+	cargo test
 
 clean:
-	rm -rf build
-	cd duckdb && make clean
-
-# Main build
-debug:
-	mkdir -p  build/debug && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ${BUILD_FLAGS} -S ./duckdb/ -B build/debug && \
-	cmake --build build/debug --config Debug
-
-release:
-	mkdir -p build/release-wasm && \
-	emcmake cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} -S ./duckdb-wasm/lib/ -B build/release-wasm && \
-	cmake --build build/release-wasm --config Release
-
-wasm:
-	mkdir -p build/release-wasm && \
-	emcmake cmake \
-		-S ./duckdb-wasm/lib \
-		-B build/release-wasm $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} \
-		-DEXTENSION_STATIC_BUILD=1 \
-		-DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} && \
-	emmake make -C build/release-wasm -j 8 duckdb_wasm
-
-#test: test_release
-#
-#test_release: release
-#	./build/release/test/unittest "$(PROJ_DIR)test/*"
-#
-#test_debug: debug
-#	./build/release/test/unittest "$(PROJ_DIR)test/*"
-
-#format:
-#	find src/ -iname *.hpp -o -iname *.cpp | xargs clang-format --sort-includes=0 -style=file -i
-#	cmake-format -i CMakeLists.txt
-
-update:
-	git submodule update --remote --merge
+	cargo clean
