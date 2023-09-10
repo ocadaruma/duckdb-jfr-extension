@@ -47,4 +47,7 @@ void duckdb_destroy_scalar_function(duckdb_scalar_function *function);
 
 //== C APIs for strings
 const char* duckdb_get_string(duckdb_vector vector, idx_t index);
+
+//== C APIs for dictionary vector
+void duckdb_vector_slice(duckdb_vector vector, uint32_t* sel, idx_t count);
 }

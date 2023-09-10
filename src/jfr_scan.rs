@@ -1,12 +1,7 @@
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use crate::duckdb::bind_info::BindInfo;
-use crate::duckdb::bindings::{
-    duckdb_bind_info, duckdb_bind_set_error, duckdb_client_context, duckdb_data_chunk,
-    duckdb_data_chunk_get_vector, duckdb_free, duckdb_function_info, duckdb_function_set_error,
-    duckdb_init_info, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve,
-    duckdb_list_vector_set_size, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid,
-    duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity,
-    duckdb_vector_size, idx_t, LogicalTypeId,
-};
+use crate::duckdb::bindings::{duckdb_bind_info, duckdb_bind_set_error, duckdb_client_context, duckdb_data_chunk, duckdb_data_chunk_get_vector, duckdb_free, duckdb_function_info, duckdb_function_set_error, duckdb_init_info, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity, duckdb_vector_size, duckdb_vector_slice, idx_t, LogicalTypeId};
 use crate::duckdb::data_chunk::DataChunk;
 use crate::duckdb::file::FileHandle;
 use crate::duckdb::function_info::FunctionInfo;
@@ -22,6 +17,7 @@ use jfrs::reader::type_descriptor::{TickUnit, Unit};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 use jfrs::reader::{Chunk, ChunkReader, JfrReader};
 use std::ffi::{c_char, CStr, CString};
+use std::mem;
 
 use std::mem::{forget, ManuallyDrop};
 
@@ -177,6 +173,9 @@ unsafe fn scan(
     let mut children_idx = vec![0usize; 1024]; // TODO grow
     let mut vector_pool = vec![None; 1024]; // TODO grow
 
+    let mut dictionaries = vec![HashMap::<(i64, i64), usize>::new(); 1024];
+    let mut sel_vectors: Vec<Option<Vec<u32>>> = vec![None; 1024];
+
     let chunk_idx = init_data.chunk_idx;
     let mut row = 0;
 
@@ -189,6 +188,14 @@ unsafe fn scan(
         if row >= vector_size {
             init_data.offset_in_chunk = event.byte_offset;
             output.set_size(row);
+
+            for (i, sel) in sel_vectors.iter_mut().enumerate() {
+                if let Some(sel) = sel {
+                    duckdb_vector_slice(vector_pool[i].unwrap(), sel.as_mut_ptr(), sel.len() as u64);
+                }
+            }
+            forget(sel_vectors);
+
             // forget(reader);
             // forget(chunk);
             return Ok(());
@@ -205,6 +212,8 @@ unsafe fn scan(
                     accessor,
                     &mut children_idx,
                     &mut vector_pool,
+                    &mut dictionaries,
+                    &mut sel_vectors,
                 );
             } else {
                 set_null(
@@ -221,6 +230,13 @@ unsafe fn scan(
 
     // forget(reader);
     // forget(chunk);
+
+    for (i, sel) in sel_vectors.iter_mut().enumerate() {
+        if let Some(sel) = sel {
+            duckdb_vector_slice(vector_pool[i].unwrap(), sel.as_mut_ptr(), sel.len() as u64);
+        }
+    }
+    forget(sel_vectors);
 
     init_data.done = true;
     output.set_size(row);
@@ -258,16 +274,52 @@ unsafe fn populate_column(
     vector: duckdb_vector,
     output: &DataChunk,
     chunk: &Chunk,
-    child: &JfrField,
+    field: &JfrField,
     accessor: Accessor<'_>,
     children_idx: &mut Vec<usize>,
     vector_pool: &mut Vec<Option<duckdb_vector>>,
+    dictionaries: &mut Vec<HashMap<(i64, i64), usize>>,
+    sel_vectors: &mut Vec<Option<Vec<u32>>>,
 ) {
+    if field.type_name == "jdk.types.Symbol" {
+        let string_field = &field.children[0];
+        if vector_pool[string_field.idx].is_none() {
+            let v = duckdb_struct_vector_get_child(vector, 0);
+            // duckdb_vector_type_set_dictionary(v);
+            // let cv = duckdb_dictionary_vector_get_child(v);
+            // vector_pool[string_field.idx + 99] = Some(cv);
+            sel_vectors[string_field.idx] = Some(vec![]);
+            vector_pool[string_field.idx] = Some(v);
+        }
+        let child_vector = vector_pool[string_field.idx].unwrap();
+        if let Some(sel_vector) = sel_vectors[string_field.idx].as_mut() {
+            let ValueDescriptor::ConstantPool { class_id, constant_index } = accessor.value else { panic!("not a constant pool") };
+            let key = (*class_id, *constant_index);
+
+            let current_size = dictionaries[string_field.idx].len();
+            match dictionaries[string_field.idx].entry(key) {
+                Entry::Occupied(e) => {
+                    sel_vector.push(*e.get() as u32);
+                }
+                Entry::Vacant(e) => {
+                    e.insert(current_size);
+                    let ValueDescriptor::Object(o) = accessor.resolve().unwrap().value else { panic!("not an object") };
+                    let ValueDescriptor::Primitive(Primitive::String(cstr)) = &o.fields[0] else { panic!("not a string") };
+                    // println!("inserting string: field_idx: {}, {:?}, len: {}, current_size: {}", string_field.idx, cstr.string, cstr.len, current_size);
+                    Vector::from(child_vector).assign_string_element_len(
+                        current_size, cstr.string.as_ptr(), cstr.len);
+                    sel_vector.push(current_size as u32);
+                }
+            }
+            return;
+        }
+    }
+
     match accessor.resolve().map(|a| a.value) {
         Some(ValueDescriptor::Primitive(p)) => match p {
             Primitive::Integer(v) => assign(vector, row_idx, *v),
             Primitive::Long(v) => {
-                let v = match (child.tick_unit, child.unit) {
+                let v = match (field.tick_unit, field.unit) {
                     (Some(TickUnit::Timestamp), _) => {
                         let ticks_per_nanos =
                             (chunk.header.ticks_per_second as f64) / 1_000_000_000.0;
@@ -290,13 +342,13 @@ unsafe fn populate_column(
             Primitive::Boolean(v) => assign(vector, row_idx, *v),
             Primitive::Short(v) => assign(vector, row_idx, *v),
             Primitive::Byte(v) => assign(vector, row_idx, *v),
-            Primitive::NullString => set_null(vector, row_idx, child, vector_pool, children_idx),
+            Primitive::NullString => set_null(vector, row_idx, field, vector_pool, children_idx),
             Primitive::String(s) => {
                 Vector::from(vector).assign_string_element_len(row_idx, s.string.as_ptr(), s.len);
             }
         },
         Some(ValueDescriptor::Object(obj)) => {
-            for (ii, (i, s)) in child
+            for (ii, (i, s)) in field
                 .children
                 .iter()
                 .enumerate()
@@ -317,12 +369,14 @@ unsafe fn populate_column(
                     Accessor::new(chunk, &obj.fields[i]),
                     children_idx,
                     vector_pool,
+                    dictionaries,
+                    sel_vectors,
                 );
             }
         }
         Some(ValueDescriptor::Array(arr)) => {
             let child_vector = duckdb_list_vector_get_child(vector);
-            let child_offset = children_idx[child.idx];
+            let child_offset = children_idx[field.idx];
             duckdb_list_vector_reserve(vector, (child_offset + arr.len()) as u64);
             for (i, v) in arr.iter().enumerate() {
                 populate_column(
@@ -330,10 +384,12 @@ unsafe fn populate_column(
                     child_vector,
                     output,
                     chunk,
-                    child,
+                    field,
                     Accessor::new(chunk, v),
                     children_idx,
                     vector_pool,
+                    dictionaries,
+                    sel_vectors,
                 );
             }
             Vector::from(vector)
@@ -342,11 +398,11 @@ unsafe fn populate_column(
                     length: arr.len() as u64,
                     offset: child_offset as u64,
                 });
-            children_idx[child.idx] = child_offset + arr.len();
+            children_idx[field.idx] = child_offset + arr.len();
             duckdb_list_vector_set_size(vector, (child_offset + arr.len()) as u64);
         }
         _ => {
-            set_null(vector, row_idx, child, vector_pool, children_idx);
+            set_null(vector, row_idx, field, vector_pool, children_idx);
         }
     }
 }

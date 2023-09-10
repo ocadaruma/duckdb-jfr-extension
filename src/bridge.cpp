@@ -369,4 +369,30 @@ const char *duckdb_get_string(duckdb_vector vector, idx_t index) {
     return str.c_str();
 }
 
+void duckdb_vector_slice(duckdb_vector vector, uint32_t* sel, idx_t count) {
+    auto v = reinterpret_cast<duckdb::Vector *>(vector);
+    duckdb::SelectionVector s(sel);
+    v->Slice(s, count);
+}
+
+//void duckdb_vector_type_set_dictionary(duckdb_vector vector) {
+//    auto v = reinterpret_cast<duckdb::Vector *>(vector);
+//    duckdb::SelectionVector sel(2048);
+//    v->Slice(sel, 2048);
+////    v->Verify(2048);
+////    v->SetVectorType(duckdb::VectorType::DICTIONARY_VECTOR);
+////    std::cout << "duckdb_vector_type_set_dictionary::" << duckdb::VectorTypeToString(v->GetVectorType()) << std::endl;
+//}
+//
+//duckdb_vector duckdb_dictionary_vector_get_child(duckdb_vector vector) {
+//    auto v = reinterpret_cast<duckdb::Vector *>(vector);
+////    std::cout << "duckdb_vector_type_get_dictionary::" << duckdb::VectorTypeToString(v->GetVectorType()) << std::endl;
+//    return reinterpret_cast<duckdb_vector>(&duckdb::DictionaryVector::Child(*v));
+//}
+//
+//void duckdb_dictionary_vector_set_index(duckdb_vector vector, idx_t index, idx_t loc) {
+//    auto v = reinterpret_cast<duckdb::Vector *>(vector);
+//    duckdb::DictionaryVector::SelVector(*v).set_index(index, loc);
+//}
+
 }
