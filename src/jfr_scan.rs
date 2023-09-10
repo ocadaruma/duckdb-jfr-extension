@@ -20,6 +20,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::mem;
 
 use std::mem::{forget, ManuallyDrop};
+use rustc_hash::FxHashMap;
 
 pub fn build_table_function_def() -> Result<TableFunction> {
     let table_function = TableFunction::new();
@@ -173,7 +174,7 @@ unsafe fn scan(
     let mut children_idx = vec![0usize; 1024]; // TODO grow
     let mut vector_pool = vec![None; 1024]; // TODO grow
 
-    let mut dictionaries = vec![HashMap::<(i64, i64), usize>::new(); 1024];
+    let mut dictionaries = vec![FxHashMap::<(i64, i64), usize>::default(); 1024];
     let mut sel_vectors: Vec<Option<Vec<u32>>> = vec![None; 1024];
 
     let chunk_idx = init_data.chunk_idx;
@@ -278,10 +279,11 @@ unsafe fn populate_column(
     accessor: Accessor<'_>,
     children_idx: &mut Vec<usize>,
     vector_pool: &mut Vec<Option<duckdb_vector>>,
-    dictionaries: &mut Vec<HashMap<(i64, i64), usize>>,
+    dictionaries: &mut Vec<FxHashMap<(i64, i64), usize>>,
     sel_vectors: &mut Vec<Option<Vec<u32>>>,
 ) {
-    if field.type_name == "jdk.types.Symbol" {
+    // if field.type_name == "jdk.types.Symbol" {
+    if field.class_id == 30 {
         let string_field = &field.children[0];
         if vector_pool[string_field.idx].is_none() {
             let v = duckdb_struct_vector_get_child(vector, 0);

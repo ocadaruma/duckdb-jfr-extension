@@ -13,6 +13,7 @@ pub struct JfrField {
     pub unit: Option<Unit>,
     pub children: Vec<JfrField>,
     pub valid: bool,
+    pub class_id: i64,
 }
 
 impl JfrField {
@@ -34,6 +35,7 @@ impl JfrField {
             unit: None,
             children: vec![],
             valid: true,
+            class_id: 0,
         };
         let mut max_idx = 1;
         Self::traverse(
@@ -82,6 +84,7 @@ impl JfrField {
                 unit: f.unit,
                 children: vec![],
                 valid: true,
+                class_id: f.class_id,
             };
             *max_idx = *idx.max(max_idx);
             Self::traverse(idx, max_idx, &mut child, next_tpe, type_pool, v.clone())?;
@@ -102,12 +105,17 @@ mod tests {
     #[test]
     fn test_schema() {
         let path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/async-profiler-wall.jfr");
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("/Users/hokada/Downloads/LNMSGKF1574.nhnjp.ism-profile-65367-20230806-175232.wall-clock.jfr");
         let (_, chunk) = JfrReader::new(File::open(path).unwrap())
             .chunks()
             .flatten()
             .next()
             .unwrap();
+        for tpe in chunk.metadata.type_pool.get_types() {
+            if tpe.name().contains("jdk.types.Symbol") {
+                println!("type: {:?}", tpe);
+            }
+        }
         let (root, count) = JfrField::from_chunk(&chunk, "jdk.ExecutionSample").unwrap();
         let expected = JfrField {
             idx: 0,
