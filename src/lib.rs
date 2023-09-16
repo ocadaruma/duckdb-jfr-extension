@@ -9,12 +9,14 @@ use crate::duckdb::bindings::{
     duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector,
     duckdb_expression_state, duckdb_get_string, duckdb_library_version, duckdb_list_entry,
     duckdb_list_vector_get_child, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId,
+    jfr_register_stacktrace_matches_function
 };
 use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::scalar_function::ScalarFunction;
 use crate::duckdb::vector::Vector;
 use regex::Regex;
 use std::ffi::{c_char, c_void, CStr};
+use std::ptr::slice_from_raw_parts;
 
 type Result<T> = anyhow::Result<T>;
 
@@ -40,7 +42,8 @@ unsafe fn init(db: *mut c_void) -> Result<()> {
     let conn = db.connect()?;
     conn.register_table_function(&jfr_scan::build_table_function_def()?)?;
     conn.register_table_function(&jfr_attach::build_table_function_def()?)?;
-    conn.register_scalar_function(&jfr_stacktrace_match_def()?)?;
+    // conn.register_scalar_function(&jfr_stacktrace_match_def()?)?;
+    jfr_register_stacktrace_matches_function(conn.ptr());
     Ok(())
 }
 
@@ -181,7 +184,7 @@ unsafe extern "C" fn stacktrace_matches(
             //     break;
             // }
         }
-
+        slice_from_raw_parts()
         result_vector
             .get_data::<bool>()
             .offset(i as isize)

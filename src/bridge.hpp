@@ -12,10 +12,16 @@ typedef void (*duckdb_table_function2_bind_t)(duckdb_client_context ctx, duckdb_
 typedef void (*duckdb_table_function2_t)(duckdb_client_context ctx, duckdb_function_info info, duckdb_data_chunk output);
 typedef void (*duckdb_scalar_function_t)(duckdb_data_chunk, duckdb_expression_state, duckdb_vector);
 
+typedef struct {
+    const char *data;
+    idx_t size;
+} string_piece;
+
 void jfr_scan_create_view(
         duckdb_client_context,
         const char* filename,
         const char* tablename);
+void jfr_register_stacktrace_matches_function(duckdb_connection connection);
 
 //== A set of functions which are modified version of
 //== original duckdb C APIs to support init/bind/function variants which accepts ClientContext
@@ -46,5 +52,5 @@ duckdb_state duckdb_register_scalar_function(duckdb_connection connection, duckd
 void duckdb_destroy_scalar_function(duckdb_scalar_function *function);
 
 //== C APIs for strings
-const char* duckdb_get_string(duckdb_vector vector, idx_t index);
+string_piece duckdb_get_string(duckdb_vector vector, idx_t index);
 }

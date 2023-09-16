@@ -1,9 +1,15 @@
 #include "duckdb.hpp"
 #include "duckdb/main/capi/capi_internal.hpp"
 #include "duckdb/function/scalar_function.hpp"
+//#include "duckdb/function/scalar/regexp.hpp"
+#include "duckdb/common/assert.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
+#include "duckdb/execution/expression_executor.hpp"
+#include "duckdb/common/helper.hpp"
+#include "re2/re2.h"
 #include "bridge.hpp"
 
 #include <iostream>
@@ -17,6 +23,86 @@ using duckdb::Value;
 
 namespace bridge {
     using namespace duckdb;
+
+    struct RegexpBindData : public FunctionData {
+        RegexpBindData(jfr_ext_re2::RE2::Options options, string constant_string, bool constant_pattern)
+                : options(options), constant_string(std::move(constant_string)), constant_pattern(constant_pattern) {
+            if (constant_pattern) {
+                auto pattern = make_uniq<jfr_ext_re2::RE2>(constant_string, options);
+                if (!pattern->ok()) {
+                    throw Exception(pattern->error());
+                }
+            }
+        }
+
+        jfr_ext_re2::RE2::Options options;
+        string constant_string;
+        bool constant_pattern;
+
+        unique_ptr<FunctionData> Copy() const override {
+            return make_uniq<RegexpBindData>(options, constant_string, constant_pattern);
+        }
+
+        bool Equals(const FunctionData &other_p) const {
+            auto &other = other_p.Cast<RegexpBindData>();
+            return constant_pattern == other.constant_pattern && constant_string == other.constant_string &&
+                   RegexOptionsEquals(options, other.options);
+        }
+
+        static bool RegexOptionsEquals(const jfr_ext_re2::RE2::Options &opt_a, const jfr_ext_re2::RE2::Options &opt_b) {
+            return opt_a.case_sensitive() == opt_b.case_sensitive();
+        }
+
+        static unique_ptr<FunctionData> RegexpBind(
+                ClientContext &context,
+                ScalarFunction &bound_function,
+                vector<unique_ptr<Expression>> &arguments) {
+            // pattern is the second argument. If its constant, we can already prepare the pattern and store it for later.
+            D_ASSERT(arguments.size() == 2);
+            jfr_ext_re2::RE2::Options options;
+            options.set_log_errors(false);
+
+            string constant_string;
+            bool constant_pattern;
+            constant_pattern = TryParseConstantPattern(context, *arguments[1], constant_string);
+            return make_uniq<RegexpBindData>(options, std::move(constant_string), constant_pattern);
+        }
+
+        static bool TryParseConstantPattern(ClientContext &context, Expression &expr, string &constant_string) {
+            if (!expr.IsFoldable()) {
+                return false;
+            }
+            Value pattern_str = ExpressionExecutor::EvaluateScalar(context, expr);
+            if (!pattern_str.IsNull() && pattern_str.type().id() == LogicalTypeId::VARCHAR) {
+                constant_string = StringValue::Get(pattern_str);
+                return true;
+            }
+            return false;
+        }
+    };
+
+    inline jfr_ext_re2::StringPiece CreateStringPiece(const string_t &input) {
+        return jfr_ext_re2::StringPiece(input.GetData(), input.GetSize());
+    }
+
+    struct RegexpLocalState : public FunctionLocalState {
+        explicit RegexpLocalState(RegexpBindData &info)
+                : constant_pattern(jfr_ext_re2::StringPiece(info.constant_string.c_str(), info.constant_string.size()),
+                                   info.options) {
+            D_ASSERT(info.constant_pattern);
+        }
+
+        jfr_ext_re2::RE2 constant_pattern;
+    };
+
+    unique_ptr<FunctionLocalState> RegexpInitState(ExpressionState &state, const BoundFunctionExpression &expr,
+                                                   FunctionData *bind_data) {
+        auto &info = bind_data->Cast<RegexpBindData>();
+        if (info.constant_pattern) {
+            return make_uniq<RegexpLocalState>(info);
+        }
+        return nullptr;
+    }
 
     struct CTableFunctionInfo : public TableFunctionInfo {
         ~CTableFunctionInfo() {
@@ -184,6 +270,33 @@ namespace bridge {
         }
         return make_uniq<NodeStatistics>(*bind_data.stats);
     }
+
+    static void StacktraceMatchesFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+        auto &strings = args.data[0];
+        auto &patterns = args.data[1];
+
+        auto &func_expr = state.expr.Cast<BoundFunctionExpression>();
+        auto &info = func_expr.bind_info->Cast<RegexpBindData>();
+
+        if (info.constant_pattern) {
+            auto fstate = reinterpret_cast<ExecuteFunctionState *>(&state);
+            auto &lstate = reinterpret_cast<RegexpLocalState &>(*fstate->local_state);
+            UnaryExecutor::Execute<string_t, bool>(strings, result, args.size(), [&](string_t input) {
+                return jfr_ext_re2::RE2::PartialMatch(CreateStringPiece(input),
+                                                      lstate.constant_pattern);
+            });
+        } else {
+            BinaryExecutor::Execute<string_t, string_t, bool>(
+                    strings, patterns, result, args.size(),
+                    [&](string_t input, string_t pattern) {
+                        jfr_ext_re2::RE2 re(CreateStringPiece(pattern), info.options);
+                        if (!re.ok()) {
+                            throw Exception(re.error());
+                        }
+                        return jfr_ext_re2::RE2::PartialMatch(CreateStringPiece(input), re);
+                    });
+        }
+    }
 }
 
 static duckdb::child_list_t<duckdb::LogicalType> getVector(
@@ -206,6 +319,24 @@ void jfr_scan_create_view(duckdb_client_context context, const char *filename, c
     auto conn = duckdb::Connection(ctx->db->GetDatabase(*ctx));
     conn.TableFunction("jfr_scan", {Value(filename), Value(tablename)})
             ->CreateView(tablename, true, false);
+}
+
+void jfr_register_stacktrace_matches_function(duckdb_connection connection) {
+    duckdb::ScalarFunction sf("stacktrace_matches",
+                              {duckdb::LogicalType::VARCHAR, duckdb::LogicalType::VARCHAR},
+                              duckdb::LogicalType::BOOLEAN,
+                              bridge::StacktraceMatchesFunction,
+                              bridge::RegexpBindData::RegexpBind, nullptr, nullptr,
+                              bridge::RegexpInitState,
+                              duckdb::LogicalType::INVALID,
+                              duckdb::FunctionSideEffects::NO_SIDE_EFFECTS,
+                              duckdb::FunctionNullHandling::SPECIAL_HANDLING);
+    duckdb::CreateScalarFunctionInfo sf_info(sf);
+    auto con = (duckdb::Connection *) connection;
+    con->context->RunFunctionInTransaction([&]() {
+        auto &catalog = duckdb::Catalog::GetSystemCatalog(*con->context);
+        catalog.CreateFunction(*con->context, sf_info);
+    });
 }
 
 duckdb_table_function duckdb_create_table_function2() {
@@ -364,9 +495,9 @@ void duckdb_destroy_scalar_function(duckdb_scalar_function *function) {
     }
 }
 
-const char *duckdb_get_string(duckdb_vector vector, idx_t index) {
-    auto str = duckdb::ConstantVector::GetData<duckdb::string_t>((duckdb::Vector &) vector)[index].GetString();
-    return str.c_str();
+string_piece duckdb_get_string(duckdb_vector vector, idx_t index) {
+    auto data = duckdb::ConstantVector::GetData<duckdb::string_t>((duckdb::Vector &) vector)[index];
+    return string_piece{data.GetData(), data.GetSize()};
 }
 
 }
