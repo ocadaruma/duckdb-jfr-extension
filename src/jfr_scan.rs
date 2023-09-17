@@ -337,7 +337,8 @@ unsafe fn populate_column(
                 );
             }
             Vector::from(vector)
-                .get_data::<duckdb_list_entry>().add(row_idx)
+                .get_data::<duckdb_list_entry>()
+                .add(row_idx)
                 .write(duckdb_list_entry {
                     length: arr.len() as u64,
                     offset: child_offset as u64,

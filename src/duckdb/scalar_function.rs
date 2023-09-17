@@ -1,4 +1,9 @@
-use crate::duckdb::bindings::{duckdb_create_scalar_function, duckdb_destroy_scalar_function, duckdb_scalar_function, duckdb_scalar_function_add_parameter, duckdb_scalar_function_bind_t, duckdb_scalar_function_init_t, duckdb_scalar_function_set_bind, duckdb_scalar_function_set_function, duckdb_scalar_function_set_init, duckdb_scalar_function_set_name, duckdb_scalar_function_set_return_type, duckdb_scalar_function_t};
+use crate::duckdb::bindings::{
+    duckdb_create_scalar_function, duckdb_destroy_scalar_function, duckdb_scalar_function,
+    duckdb_scalar_function_add_parameter, duckdb_scalar_function_set_function,
+    duckdb_scalar_function_set_name, duckdb_scalar_function_set_return_type,
+    duckdb_scalar_function_t,
+};
 use crate::duckdb::logical_type::LogicalType;
 use crate::Result;
 use std::ffi::CString;
@@ -24,18 +29,6 @@ impl ScalarFunction {
     pub fn set_return_type(&self, ty: &LogicalType) {
         unsafe {
             duckdb_scalar_function_set_return_type(self.0, ty.ptr());
-        }
-    }
-
-    pub fn set_bind(&self, f: duckdb_scalar_function_bind_t) {
-        unsafe {
-            duckdb_scalar_function_set_bind(self.0, f);
-        }
-    }
-
-    pub fn set_init(&self, f: duckdb_scalar_function_init_t) {
-        unsafe {
-            duckdb_scalar_function_set_init(self.0, f);
         }
     }
 

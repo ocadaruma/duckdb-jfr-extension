@@ -150,11 +150,7 @@ void duckdb_file_close(duckdb_file_handle handle);
 //===--------------------------------------------------------------------===//
 typedef void *duckdb_scalar_function;
 typedef void *duckdb_scalar_function_info;
-typedef void *duckdb_scalar_bind_info;
-typedef void *duckdb_scalar_init_info;
 typedef void (*duckdb_scalar_function_t)(duckdb_scalar_function_info info, duckdb_data_chunk args, duckdb_vector result);
-typedef void (*duckdb_scalar_function_bind_t)(duckdb_scalar_bind_info info);
-typedef void (*duckdb_scalar_function_init_t)(duckdb_scalar_init_info info);
 
 /*!
 Creates a new empty scalar function.
@@ -197,22 +193,6 @@ Adds a parameter to the scalar function.
 void duckdb_scalar_function_add_parameter(duckdb_scalar_function function, duckdb_logical_type type);
 
 /*!
-Sets the bind function of the scalar function
-
-* scalar_function: The scalar function
-* bind: The bind function
-*/
-void duckdb_scalar_function_set_bind(duckdb_scalar_function scalar_function, duckdb_scalar_function_bind_t bind);
-
-/*!
-Sets the init function of the scalar function
-
-* scalar_function: The scalar function
-* init: The init function
-*/
-void duckdb_scalar_function_set_init(duckdb_scalar_function scalar_function, duckdb_scalar_function_init_t bind);
-
-/*!
 Sets the main function of the scalar function
 
 * scalar_function: The scalar function
@@ -241,15 +221,7 @@ This object can be retrieved again during execution.
 * extra_data: The bind data object.
 * destroy: The callback that will be called to destroy the bind data (if any)
 */
-void duckdb_scalar_bind_set_bind_data(duckdb_scalar_bind_info info, void *extra_data, duckdb_delete_callback_t destroy);
-
-/*!
-Report that an error has occurred while calling bind.
-
-* info: The info object
-* error: The error message
-*/
-void duckdb_scalar_bind_set_error(duckdb_scalar_bind_info info, const char *error);
+void duckdb_scalar_function_set_bind_data(duckdb_scalar_function_info info, void *extra_data, duckdb_delete_callback_t destroy);
 
 /*!
 Sets the user-provided init data in the scalar function init object.
@@ -259,15 +231,7 @@ This object can be retrieved again during execution.
 * extra_data: The bind data object.
 * destroy: The callback that will be called to destroy the bind data (if any)
 */
-void duckdb_scalar_init_set_init_data(duckdb_scalar_init_info info, void *extra_data, duckdb_delete_callback_t destroy);
-
-/*!
-Report that an error has occurred while calling init.
-
-* info: The info object
-* error: The error message
-*/
-void duckdb_scalar_init_set_error(duckdb_scalar_init_info info, const char *error);
+void duckdb_scalar_function_set_init_data(duckdb_scalar_function_info info, void *extra_data, duckdb_delete_callback_t destroy);
 
 /*!
 Gets the bind data set by `duckdb_scalar_bind_set_bind_data` during the bind.

@@ -5,7 +5,11 @@ mod jfr_schema;
 
 use crate::duckdb::Database;
 
-use crate::duckdb::bindings::{duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_scalar_bind_info, duckdb_scalar_function_info, duckdb_scalar_init_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId};
+use crate::duckdb::bindings::{
+    duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string,
+    duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child,
+    duckdb_scalar_function_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId,
+};
 use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::scalar_function::ScalarFunction;
 use crate::duckdb::vector::Vector;
@@ -47,24 +51,14 @@ fn stacktrace_match_def() -> Result<ScalarFunction> {
     let f = ScalarFunction::new();
     f.set_name("stacktrace_match")?;
     f.set_return_type(&LogicalType::new(LogicalTypeId::Boolean));
-    f.set_bind(Some(stacktrace_match_bind));
-    f.set_init(Some(stacktrace_match_init));
     f.set_function(Some(stacktrace_match_function));
     Ok(f)
-}
-
-unsafe extern "C" fn stacktrace_match_bind(_info: duckdb_scalar_bind_info) {
-    // noop
-}
-
-unsafe extern "C" fn stacktrace_match_init(_info: duckdb_scalar_init_info) {
-    // noop
 }
 
 unsafe extern "C" fn stacktrace_match_function(
     _info: duckdb_scalar_function_info,
     args: duckdb_data_chunk,
-    result: duckdb_vector
+    result: duckdb_vector,
 ) {
     let count = duckdb_data_chunk_get_size(args);
     let vector = Vector::from(result);
