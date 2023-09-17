@@ -8,9 +8,16 @@ use std::path::{Path, PathBuf};
 fn main() {
     let duckdb_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("duckdb-wasm/submodules/duckdb");
     let duckdb_include = duckdb_root.join("src/include");
+    let sources = [
+        "src/bridge.cpp",
+        "src/bridge_scalar_function.cpp",
+        "src/bridge_table_function.cpp",
+    ];
 
     cargo_rerun_if_changed("src/bridge.hpp");
-    cargo_rerun_if_changed("src/bridge.cpp");
+    for source in sources {
+        cargo_rerun_if_changed(source);
+    }
     cargo_rerun_if_changed(duckdb_root);
     cargo_rerun_if_env_changed("LD_LIBRARY_PATH");
 
@@ -40,9 +47,10 @@ fn main() {
 
     cc::Build::new()
         .include(duckdb_include)
+        .include("src/re2")
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-std=c++11")
         .cpp(true)
-        .file("src/bridge.cpp")
+        .files(sources)
         .compile("bridge");
 }
