@@ -6,21 +6,18 @@ mod jfr_schema;
 use crate::duckdb::Database;
 
 use crate::duckdb::bindings::{
-    duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string,
-    duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child,
-    duckdb_scalar_function_info, duckdb_scalar_function_set_error, duckdb_struct_vector_get_child,
-    duckdb_unified_vector_validity_row_is_valid, duckdb_validity_set_row_invalid, duckdb_vector,
-    duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity, duckdb_vector_is_constant,
-    LogicalTypeId,
+    duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector,
+    duckdb_library_version, duckdb_list_entry, duckdb_scalar_function_info,
+    duckdb_scalar_function_set_error, duckdb_vector, LogicalTypeId,
 };
-use crate::duckdb::function_info::ScalarFunctionInfo;
+
 use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::scalar_function::ScalarFunction;
 use crate::duckdb::unified_vector::UnifiedVector;
 use crate::duckdb::vector::Vector;
 use regex::Regex;
-use std::ffi::{c_char, c_void, CStr, CString};
-use std::ptr::{null_mut, slice_from_raw_parts};
+use std::ffi::{c_char, c_void, CString};
+
 use std::slice::from_raw_parts;
 
 type Result<T> = anyhow::Result<T>;

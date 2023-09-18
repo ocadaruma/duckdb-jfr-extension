@@ -1,7 +1,7 @@
 use crate::duckdb::bindings::{
     duckdb_destroy_unified_vector_format, duckdb_get_string, duckdb_to_unified_format,
     duckdb_unified_vector_format, duckdb_unified_vector_validity_row_is_valid, duckdb_vector,
-    duckdb_vector_assign_string_element_len, duckdb_vector_get_data, idx_t, string_piece,
+    idx_t, string_piece,
 };
 
 pub struct UnifiedVector(duckdb_unified_vector_format);
