@@ -74,9 +74,23 @@ duckdb_logical_type duckdb_create_struct_type(
     return reinterpret_cast<duckdb_logical_type>(stype);
 }
 
-string_piece duckdb_get_string(duckdb_vector vector, idx_t index) {
-    auto data = duckdb::ConstantVector::GetData<duckdb::string_t>((duckdb::Vector &) vector)[index];
-    return string_piece{data.GetData(), data.GetSize()};
+string_piece duckdb_get_string(duckdb_unified_vector_format vector, idx_t index) {
+    auto fmt = reinterpret_cast<duckdb::UnifiedVectorFormat *>(vector);
+    auto data = duckdb::UnifiedVectorFormat::GetData<duckdb::string_t>(*fmt);
+    auto idx = fmt->sel->get_index(index);
+
+    return string_piece{data[idx].GetData(), data[idx].GetSize()};
+}
+
+duckdb_unified_vector_format duckdb_unified_data_chunk_get_vector(duckdb_unified_data_chunk chunk, idx_t column) {
+    auto dchunk = reinterpret_cast<duckdb::UnifiedVectorFormat *>(chunk);
+    return reinterpret_cast<duckdb_unified_vector_format>(&dchunk[column]);
+}
+
+bool duckdb_unified_vector_validity_row_is_valid(duckdb_unified_vector_format vector, idx_t row) {
+    auto fmt = reinterpret_cast<duckdb::UnifiedVectorFormat *>(vector);
+    auto idx = fmt->sel->get_index(row);
+    return fmt->validity.RowIsValid(idx);
 }
 
 }

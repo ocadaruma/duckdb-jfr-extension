@@ -5,17 +5,15 @@ mod jfr_schema;
 
 use crate::duckdb::Database;
 
-use crate::duckdb::bindings::{
-    duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string,
-    duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child,
-    duckdb_scalar_function_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId,
-};
+use crate::duckdb::bindings::{duckdb_data_chunk, duckdb_unified_data_chunk, duckdb_scalar_function_get_arguments_size, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_scalar_function_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId, duckdb_unified_data_chunk_get_vector, duckdb_unified_vector_validity_row_is_valid, duckdb_vector_ensure_validity_writable, duckdb_validity_set_row_invalid, duckdb_vector_get_validity};
 use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::scalar_function::ScalarFunction;
 use crate::duckdb::vector::Vector;
-use regex::Regex;
 use std::ffi::{c_char, c_void, CStr};
-use std::ptr::slice_from_raw_parts;
+use std::ptr::{null_mut, slice_from_raw_parts};
+use std::slice::from_raw_parts;
+use regex::bytes::Regex;
+use crate::duckdb::function_info::ScalarFunctionInfo;
 
 type Result<T> = anyhow::Result<T>;
 
@@ -27,6 +25,7 @@ type Result<T> = anyhow::Result<T>;
 // - projection pushdown
 // - cleanup comments
 // - malloc/free
+// - assign_string_element_len without memcpy?
 
 #[no_mangle]
 pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: *mut c_void) {
@@ -49,21 +48,48 @@ unsafe fn init(db: *mut c_void) -> Result<()> {
 
 fn stacktrace_match_def() -> Result<ScalarFunction> {
     let f = ScalarFunction::new();
-    f.set_name("stacktrace_match")?;
+    f.set_name("stacktrace_matches")?;
+    f.add_parameter(&LogicalType::new(LogicalTypeId::Varchar));
+    f.add_parameter(&LogicalType::new(LogicalTypeId::Varchar));
     f.set_return_type(&LogicalType::new(LogicalTypeId::Boolean));
-    f.set_function(Some(stacktrace_match_function));
+    f.set_function(Some(stacktrace_matches_function));
     Ok(f)
 }
 
-unsafe extern "C" fn stacktrace_match_function(
-    _info: duckdb_scalar_function_info,
-    args: duckdb_data_chunk,
+// struct InitData {
+//     regex: Regex,
+// }
+
+unsafe extern "C" fn stacktrace_matches_function(
+    info: duckdb_scalar_function_info,
+    args: duckdb_unified_data_chunk,
     result: duckdb_vector,
 ) {
-    let count = duckdb_data_chunk_get_size(args);
+    // let info = ScalarFunctionInfo::from(info);
+
+    let count = duckdb_scalar_function_get_arguments_size(info);
     let vector = Vector::from(result);
+
+    // let strings = Vector::from(duckdb_data_chunk_get_vector(args, 0));
+    // let patterns = Vector::from(duckdb_data_chunk_get_vector(args, 1));
+
+    let strings = duckdb_unified_data_chunk_get_vector(args, 0);
+    let patterns = duckdb_unified_data_chunk_get_vector(args, 1);
+
     for i in 0..count {
-        vector.get_data::<bool>().add(i as usize).write(i % 2 == 0);
+        let s = duckdb_get_string(strings, i);
+        let p = duckdb_get_string(patterns, i);
+        if !duckdb_unified_vector_validity_row_is_valid(strings, i) ||
+            !duckdb_unified_vector_validity_row_is_valid(patterns, i) {
+            duckdb_vector_ensure_validity_writable(result);
+            duckdb_validity_set_row_invalid(duckdb_vector_get_validity(result), i);
+        }
+
+        let s = from_raw_parts(s.data.cast::<u8>(), s.size as usize);
+        let p = CStr::from_ptr(p.data).to_str().expect("invalid utf8");
+
+        let regex = Regex::new(p).expect("invalid regex");
+        vector.get_data::<bool>().add(i as usize).write(regex.is_match(s));
     }
 }
 

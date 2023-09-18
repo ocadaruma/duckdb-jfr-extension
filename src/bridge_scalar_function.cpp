@@ -90,11 +90,12 @@ namespace bridge {
     };
 
     struct CScalarInternalFunctionInfo {
-        CScalarInternalFunctionInfo(CScalarBindData &bind_data, CScalarInitData &init_data)
-                : bind_data(bind_data), init_data(init_data), success(true) {}
+        CScalarInternalFunctionInfo(CScalarBindData &bind_data, CScalarInitData &init_data, idx_t chunk_size)
+                : bind_data(bind_data), init_data(init_data), chunk_size(chunk_size), success(true) {}
 
         CScalarBindData &bind_data;
         CScalarInitData &init_data;
+        idx_t chunk_size;
         bool success;
         string error;
     };
@@ -242,15 +243,22 @@ void duckdb_scalar_function_set_function(duckdb_scalar_function scalar_function,
         auto &bind_data = (bridge::CScalarBindData &) *func_expr.bind_info;
         auto &lstate = (duckdb::ExecuteFunctionState &) state;
 
-        bridge::CScalarInternalFunctionInfo function_info(bind_data, (bridge::CScalarInitData &) *lstate.local_state);
+        bridge::CScalarInternalFunctionInfo function_info(
+                bind_data,
+                (bridge::CScalarInitData &) *lstate.local_state,
+                args.size());
 
+        auto unified = args.ToUnifiedFormat();
+        result.SetVectorType(duckdb::VectorType::FLAT_VECTOR);
         function(
                 &function_info,
-                reinterpret_cast<duckdb_data_chunk>(&args),
+                reinterpret_cast<duckdb_unified_data_chunk>(unified.get()),
                 reinterpret_cast<duckdb_vector>(&result));
-
         if (!function_info.success) {
             throw duckdb::Exception(function_info.error);
+        }
+        if (args.AllConstant()) {
+            result.SetVectorType(duckdb::VectorType::CONSTANT_VECTOR);
         }
     };
 }
@@ -315,6 +323,14 @@ duckdb_state duckdb_register_scalar_function(duckdb_connection connection, duckd
         catalog.CreateFunction(*con->context, sf_info);
     });
     return DuckDBSuccess;
+}
+
+idx_t duckdb_scalar_function_get_arguments_size(duckdb_scalar_function_info info) {
+    if (!info) {
+        return 0;
+    }
+    auto function_info = (bridge::CScalarInternalFunctionInfo *)info;
+    return function_info->chunk_size;
 }
 
 }
