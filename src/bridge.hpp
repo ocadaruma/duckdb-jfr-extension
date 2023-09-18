@@ -289,6 +289,17 @@ The returned char pointer MUST not be freed.
  */
 string_piece duckdb_get_string(duckdb_unified_vector_format vector, idx_t index);
 
+/*!
+Get a string piece from a vector.
+
+The returned char pointer MUST not be freed.
+
+ * vector: The vector to get the string piece from
+ * index: The index in the vector
+ * returns: The string piece
+ */
+string_piece duckdb_get_string2(duckdb_vector vector, idx_t index);
+
 //===--------------------------------------------------------------------===//
 // Vector
 //===--------------------------------------------------------------------===//

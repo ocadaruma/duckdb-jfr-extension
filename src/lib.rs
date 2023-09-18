@@ -5,14 +5,14 @@ mod jfr_schema;
 
 use crate::duckdb::Database;
 
-use crate::duckdb::bindings::{duckdb_data_chunk, duckdb_unified_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_scalar_function_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId, duckdb_unified_data_chunk_get_vector, duckdb_unified_vector_validity_row_is_valid, duckdb_vector_ensure_validity_writable, duckdb_validity_set_row_invalid, duckdb_vector_get_validity, duckdb_scalar_function_set_error};
+use crate::duckdb::bindings::{duckdb_data_chunk, duckdb_unified_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string, duckdb_get_string2, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_scalar_function_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId, duckdb_unified_data_chunk_get_vector, duckdb_unified_vector_validity_row_is_valid, duckdb_vector_ensure_validity_writable, duckdb_validity_set_row_invalid, duckdb_vector_get_validity, duckdb_scalar_function_set_error};
 use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::scalar_function::ScalarFunction;
 use crate::duckdb::vector::Vector;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::ptr::{null_mut, slice_from_raw_parts};
 use std::slice::from_raw_parts;
-use regex::bytes::Regex;
+use regex::Regex;
 use crate::duckdb::function_info::ScalarFunctionInfo;
 
 type Result<T> = anyhow::Result<T>;
@@ -49,7 +49,7 @@ unsafe fn init(db: *mut c_void) -> Result<()> {
 fn stacktrace_match_def() -> Result<ScalarFunction> {
     let f = ScalarFunction::new();
     f.set_name("stacktrace_matches")?;
-    f.add_parameter(&LogicalType::new(LogicalTypeId::Varchar));
+    f.add_parameter(&stacktrace_type()?);
     f.add_parameter(&LogicalType::new(LogicalTypeId::Varchar));
     f.set_return_type(&LogicalType::new(LogicalTypeId::Boolean));
     f.set_function(Some(stacktrace_matches_function));
@@ -80,24 +80,61 @@ unsafe fn stacktrace_matches(
     result: duckdb_vector,
 ) -> Result<()> {
     let count = duckdb_data_chunk_get_size(args);
-    let vector = Vector::from(result);
+    let result_vector = Vector::from(result);
 
-    let strings = duckdb_unified_data_chunk_get_vector(unified_args, 0);
+    let stacktrace_vector = duckdb_data_chunk_get_vector(args, 0);
+    let frames = Vector::from(duckdb_struct_vector_get_child(stacktrace_vector, 1));
+    let frame = duckdb_list_vector_get_child(frames.ptr());
+    let method = duckdb_struct_vector_get_child(frame, 0);
+
+    let tpe = duckdb_struct_vector_get_child(method, 0);
+    let tpe_name = duckdb_struct_vector_get_child(tpe, 1);
+    let tpe_string = Vector::from(duckdb_struct_vector_get_child(tpe_name, 0));
+
+
+    let name = duckdb_struct_vector_get_child(method, 1);
+    let string = Vector::from(duckdb_struct_vector_get_child(name, 0));
+
     let patterns = duckdb_unified_data_chunk_get_vector(unified_args, 1);
     let p = duckdb_get_string(patterns, 0);
-    let p = CStr::from_ptr(p.data).to_str()?;
+    let p = from_raw_parts(p.data.cast::<u8>(), p.size as usize);
+    let p = std::str::from_utf8(p)?;
     let regex = Regex::new(p)?;
 
     for i in 0..count {
-        let s = duckdb_get_string(strings, i);
-        if !duckdb_unified_vector_validity_row_is_valid(strings, i) ||
-            !duckdb_unified_vector_validity_row_is_valid(patterns, i) {
-            duckdb_vector_ensure_validity_writable(result);
-            duckdb_validity_set_row_invalid(duckdb_vector_get_validity(result), i);
+        let entry = frames
+            .get_data::<duckdb_list_entry>()
+            .add(i as usize)
+            .read();
+        let mut matched = false;
+        for j in 0..entry.length {
+            let tpe_s = duckdb_get_string2(tpe_string.ptr(), entry.offset + j);
+            let tpe_s = from_raw_parts(tpe_s.data.cast::<u8>(), tpe_s.size as usize);
+            let tpe_s = std::str::from_utf8(tpe_s)?;
+
+            let s = duckdb_get_string2(string.ptr(), entry.offset + j);
+            let s = from_raw_parts(s.data.cast::<u8>(), s.size as usize);
+            let s = std::str::from_utf8(s)?;
+
+            // println!("str: {}", s.to_str()?);
+            let s2 = format!("{}.{}", tpe_s, s);
+            // let s2 = format!("{}", s.to_str()?);
+            if regex.is_match(s2.as_str()) {
+                matched = true;
+                break;
+            }
         }
 
-        let s = from_raw_parts(s.data.cast::<u8>(), s.size as usize);
-        vector.get_data::<bool>().add(i as usize).write(regex.is_match(s));
+        // let s = duckdb_get_string(strings, i);
+        // if !duckdb_unified_vector_validity_row_is_valid(strings, i) ||
+        //     !duckdb_unified_vector_validity_row_is_valid(patterns, i) {
+        //     duckdb_vector_ensure_validity_writable(result);
+        //     duckdb_validity_set_row_invalid(duckdb_vector_get_validity(result), i);
+        // }
+        //
+        // let s = from_raw_parts(s.data.cast::<u8>(), s.size as usize);
+
+        result_vector.get_data::<bool>().add(i as usize).write(matched);
     }
     Ok(())
 }

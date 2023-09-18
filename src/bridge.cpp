@@ -82,6 +82,13 @@ string_piece duckdb_get_string(duckdb_unified_vector_format vector, idx_t index)
     return string_piece{data[idx].GetData(), data[idx].GetSize()};
 }
 
+string_piece duckdb_get_string2(duckdb_vector vector, idx_t index) {
+    auto v = reinterpret_cast<duckdb::Vector *>(vector);
+    auto data = duckdb::ConstantVector::GetData<duckdb::string_t>(*v);
+
+    return string_piece{data[index].GetData(), data[index].GetSize()};
+}
+
 duckdb_unified_vector_format duckdb_unified_data_chunk_get_vector(duckdb_unified_data_chunk chunk, idx_t column) {
     auto dchunk = reinterpret_cast<duckdb::UnifiedVectorFormat *>(chunk);
     return reinterpret_cast<duckdb_unified_vector_format>(&dchunk[column]);
