@@ -156,7 +156,11 @@ void duckdb_file_close(duckdb_file_handle handle);
 //===--------------------------------------------------------------------===//
 typedef void *duckdb_scalar_function;
 typedef void *duckdb_scalar_function_info;
-typedef void (*duckdb_scalar_function_t)(duckdb_scalar_function_info info, duckdb_unified_data_chunk args, duckdb_vector result);
+typedef void (*duckdb_scalar_function_t)(
+        duckdb_scalar_function_info info,
+        duckdb_data_chunk args,
+        duckdb_unified_data_chunk unified_args,
+        duckdb_vector result);
 
 /*!
 Creates a new empty scalar function.
@@ -265,13 +269,6 @@ Report that an error has occurred while executing the function.
 * error: The error message
 */
 void duckdb_scalar_function_set_error(duckdb_scalar_function_info info, const char *error);
-
-/*!
-Gets the size of arguments of the scalar function.
-
-* info: The info object
-*/
-idx_t duckdb_scalar_function_get_arguments_size(duckdb_scalar_function_info info);
 
 //===--------------------------------------------------------------------===//
 // C APIs for strings

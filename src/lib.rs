@@ -5,11 +5,11 @@ mod jfr_schema;
 
 use crate::duckdb::Database;
 
-use crate::duckdb::bindings::{duckdb_data_chunk, duckdb_unified_data_chunk, duckdb_scalar_function_get_arguments_size, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_scalar_function_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId, duckdb_unified_data_chunk_get_vector, duckdb_unified_vector_validity_row_is_valid, duckdb_vector_ensure_validity_writable, duckdb_validity_set_row_invalid, duckdb_vector_get_validity};
+use crate::duckdb::bindings::{duckdb_data_chunk, duckdb_unified_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_scalar_function_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId, duckdb_unified_data_chunk_get_vector, duckdb_unified_vector_validity_row_is_valid, duckdb_vector_ensure_validity_writable, duckdb_validity_set_row_invalid, duckdb_vector_get_validity, duckdb_scalar_function_set_error};
 use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::scalar_function::ScalarFunction;
 use crate::duckdb::vector::Vector;
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::{c_char, c_void, CStr, CString};
 use std::ptr::{null_mut, slice_from_raw_parts};
 use std::slice::from_raw_parts;
 use regex::bytes::Regex;
@@ -62,23 +62,34 @@ fn stacktrace_match_def() -> Result<ScalarFunction> {
 
 unsafe extern "C" fn stacktrace_matches_function(
     info: duckdb_scalar_function_info,
-    args: duckdb_unified_data_chunk,
+    args: duckdb_data_chunk,
+    unified_args: duckdb_unified_data_chunk,
     result: duckdb_vector,
 ) {
-    // let info = ScalarFunctionInfo::from(info);
+    if let Err(err) = stacktrace_matches(info, args, unified_args, result) {
+        if let Ok(cstr) = CString::new(err.to_string()) {
+            duckdb_scalar_function_set_error(info, cstr.into_raw());
+        }
+    }
+}
 
-    let count = duckdb_scalar_function_get_arguments_size(info);
+unsafe fn stacktrace_matches(
+    _info: duckdb_scalar_function_info,
+    args: duckdb_data_chunk,
+    unified_args: duckdb_unified_data_chunk,
+    result: duckdb_vector,
+) -> Result<()> {
+    let count = duckdb_data_chunk_get_size(args);
     let vector = Vector::from(result);
 
-    // let strings = Vector::from(duckdb_data_chunk_get_vector(args, 0));
-    // let patterns = Vector::from(duckdb_data_chunk_get_vector(args, 1));
-
-    let strings = duckdb_unified_data_chunk_get_vector(args, 0);
-    let patterns = duckdb_unified_data_chunk_get_vector(args, 1);
+    let strings = duckdb_unified_data_chunk_get_vector(unified_args, 0);
+    let patterns = duckdb_unified_data_chunk_get_vector(unified_args, 1);
+    let p = duckdb_get_string(patterns, 0);
+    let p = CStr::from_ptr(p.data).to_str()?;
+    let regex = Regex::new(p)?;
 
     for i in 0..count {
         let s = duckdb_get_string(strings, i);
-        let p = duckdb_get_string(patterns, i);
         if !duckdb_unified_vector_validity_row_is_valid(strings, i) ||
             !duckdb_unified_vector_validity_row_is_valid(patterns, i) {
             duckdb_vector_ensure_validity_writable(result);
@@ -86,11 +97,9 @@ unsafe extern "C" fn stacktrace_matches_function(
         }
 
         let s = from_raw_parts(s.data.cast::<u8>(), s.size as usize);
-        let p = CStr::from_ptr(p.data).to_str().expect("invalid utf8");
-
-        let regex = Regex::new(p).expect("invalid regex");
         vector.get_data::<bool>().add(i as usize).write(regex.is_match(s));
     }
+    Ok(())
 }
 
 // fn jfr_stacktrace_match_def() -> Result<ScalarFunction> {
@@ -105,79 +114,79 @@ unsafe extern "C" fn stacktrace_matches_function(
 //     Ok(f)
 // }
 //
-// fn stacktrace_type() -> Result<LogicalType> {
-//     LogicalType::new_struct_type(&[
-//         ("truncated", LogicalType::new(LogicalTypeId::Boolean)),
-//         (
-//             "frames",
-//             LogicalType::new_list_type(&LogicalType::new_struct_type(&[
-//                 (
-//                     "method",
-//                     LogicalType::new_struct_type(&[
-//                         (
-//                             "type",
-//                             LogicalType::new_struct_type(&[
-//                                 (
-//                                     "classLoader",
-//                                     LogicalType::new_struct_type(&[(
-//                                         "name",
-//                                         LogicalType::new_struct_type(&[(
-//                                             "string",
-//                                             LogicalType::new(LogicalTypeId::Varchar),
-//                                         )])?,
-//                                     )])?,
-//                                 ),
-//                                 (
-//                                     "name",
-//                                     LogicalType::new_struct_type(&[(
-//                                         "string",
-//                                         LogicalType::new(LogicalTypeId::Varchar),
-//                                     )])?,
-//                                 ),
-//                                 (
-//                                     "package",
-//                                     LogicalType::new_struct_type(&[(
-//                                         "name",
-//                                         LogicalType::new_struct_type(&[(
-//                                             "string",
-//                                             LogicalType::new(LogicalTypeId::Varchar),
-//                                         )])?,
-//                                     )])?,
-//                                 ),
-//                                 ("modifiers", LogicalType::new(LogicalTypeId::Integer)),
-//                             ])?,
-//                         ),
-//                         (
-//                             "name",
-//                             LogicalType::new_struct_type(&[(
-//                                 "string",
-//                                 LogicalType::new(LogicalTypeId::Varchar),
-//                             )])?,
-//                         ),
-//                         (
-//                             "descriptor",
-//                             LogicalType::new_struct_type(&[(
-//                                 "string",
-//                                 LogicalType::new(LogicalTypeId::Varchar),
-//                             )])?,
-//                         ),
-//                         ("modifiers", LogicalType::new(LogicalTypeId::Integer)),
-//                         ("hidden", LogicalType::new(LogicalTypeId::Boolean)),
-//                     ])?,
-//                 ),
-//                 ("lineNumber", LogicalType::new(LogicalTypeId::Integer)),
-//                 ("bytecodeIndex", LogicalType::new(LogicalTypeId::Integer)),
-//                 (
-//                     "type",
-//                     LogicalType::new_struct_type(&[(
-//                         "description",
-//                         LogicalType::new(LogicalTypeId::Varchar),
-//                     )])?,
-//                 ),
-//             ])?),
-//         ),
-//     ])
-// }
+fn stacktrace_type() -> Result<LogicalType> {
+    LogicalType::new_struct_type(&[
+        ("truncated", LogicalType::new(LogicalTypeId::Boolean)),
+        (
+            "frames",
+            LogicalType::new_list_type(&LogicalType::new_struct_type(&[
+                (
+                    "method",
+                    LogicalType::new_struct_type(&[
+                        (
+                            "type",
+                            LogicalType::new_struct_type(&[
+                                (
+                                    "classLoader",
+                                    LogicalType::new_struct_type(&[(
+                                        "name",
+                                        LogicalType::new_struct_type(&[(
+                                            "string",
+                                            LogicalType::new(LogicalTypeId::Varchar),
+                                        )])?,
+                                    )])?,
+                                ),
+                                (
+                                    "name",
+                                    LogicalType::new_struct_type(&[(
+                                        "string",
+                                        LogicalType::new(LogicalTypeId::Varchar),
+                                    )])?,
+                                ),
+                                (
+                                    "package",
+                                    LogicalType::new_struct_type(&[(
+                                        "name",
+                                        LogicalType::new_struct_type(&[(
+                                            "string",
+                                            LogicalType::new(LogicalTypeId::Varchar),
+                                        )])?,
+                                    )])?,
+                                ),
+                                ("modifiers", LogicalType::new(LogicalTypeId::Integer)),
+                            ])?,
+                        ),
+                        (
+                            "name",
+                            LogicalType::new_struct_type(&[(
+                                "string",
+                                LogicalType::new(LogicalTypeId::Varchar),
+                            )])?,
+                        ),
+                        (
+                            "descriptor",
+                            LogicalType::new_struct_type(&[(
+                                "string",
+                                LogicalType::new(LogicalTypeId::Varchar),
+                            )])?,
+                        ),
+                        ("modifiers", LogicalType::new(LogicalTypeId::Integer)),
+                        ("hidden", LogicalType::new(LogicalTypeId::Boolean)),
+                    ])?,
+                ),
+                ("lineNumber", LogicalType::new(LogicalTypeId::Integer)),
+                ("bytecodeIndex", LogicalType::new(LogicalTypeId::Integer)),
+                (
+                    "type",
+                    LogicalType::new_struct_type(&[(
+                        "description",
+                        LogicalType::new(LogicalTypeId::Varchar),
+                    )])?,
+                ),
+            ])?),
+        ),
+    ])
+}
 //
 // // unsafe extern "C" fn jfr_stacktrace_match(
 // //     args: duckdb_data_chunk,
