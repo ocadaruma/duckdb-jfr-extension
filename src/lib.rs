@@ -47,8 +47,6 @@ unsafe fn init(db: *mut c_void) -> Result<()> {
     conn.register_table_function(&jfr_scan::build_table_function_def()?)?;
     conn.register_table_function(&jfr_attach::build_table_function_def()?)?;
     conn.register_scalar_function(&stacktrace_match_def()?)?;
-    // conn.register_scalar_function(&jfr_stacktrace_match_def()?)?;
-    // jfr_register_stacktrace_matches_function(conn.ptr());
     Ok(())
 }
 
@@ -61,10 +59,6 @@ fn stacktrace_match_def() -> Result<ScalarFunction> {
     f.set_function(Some(stacktrace_matches_function));
     Ok(f)
 }
-
-// struct InitData {
-//     regex: Regex,
-// }
 
 unsafe extern "C" fn stacktrace_matches_function(
     info: duckdb_scalar_function_info,
