@@ -9,9 +9,9 @@ pub mod init_info;
 pub mod logical_type;
 pub mod scalar_function;
 pub mod table_function;
+pub mod unified_vector;
 pub mod value;
 pub mod vector;
-pub mod unified_vector;
 
 use crate::duckdb::bindings::{
     duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect, duckdb_malloc,

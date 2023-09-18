@@ -1,5 +1,7 @@
 use crate::duckdb::bindings::{
-    duckdb_vector, duckdb_vector_assign_string_element_len, duckdb_vector_get_data, idx_t,
+    duckdb_list_vector_get_child, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid,
+    duckdb_vector, duckdb_vector_assign_string_element_len, duckdb_vector_ensure_validity_writable,
+    duckdb_vector_get_data, duckdb_vector_get_validity, duckdb_vector_is_constant, idx_t,
 };
 use std::ffi::c_char;
 
@@ -12,6 +14,25 @@ impl Vector {
 
     pub fn ptr(&self) -> duckdb_vector {
         self.0
+    }
+
+    pub fn get_struct_child(&self, index: idx_t) -> Self {
+        Self(unsafe { duckdb_struct_vector_get_child(self.ptr(), index) })
+    }
+
+    pub fn get_list_child(&self) -> Self {
+        Self(unsafe { duckdb_list_vector_get_child(self.ptr()) })
+    }
+
+    pub fn is_constant(&self) -> bool {
+        unsafe { duckdb_vector_is_constant(self.ptr()) }
+    }
+
+    pub fn set_null(&self, index: idx_t) {
+        unsafe {
+            duckdb_vector_ensure_validity_writable(self.0);
+            duckdb_validity_set_row_invalid(duckdb_vector_get_validity(self.0), index);
+        }
     }
 
     pub fn get_data<T>(&self) -> *mut T {

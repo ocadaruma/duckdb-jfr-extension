@@ -1,6 +1,5 @@
 use crate::duckdb::bindings::{
-    duckdb_function2_get_bind_data, duckdb_function2_get_init_data,
-    duckdb_function_info,
+    duckdb_function2_get_bind_data, duckdb_function2_get_init_data, duckdb_function_info,
     duckdb_scalar_function_info,
 };
 use std::ffi::c_void;
