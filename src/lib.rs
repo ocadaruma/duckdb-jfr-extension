@@ -5,7 +5,7 @@ mod jfr_schema;
 
 use crate::duckdb::Database;
 
-use crate::duckdb::bindings::{duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_scalar_function_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId, duckdb_unified_vector_validity_row_is_valid, duckdb_vector_ensure_validity_writable, duckdb_validity_set_row_invalid, duckdb_vector_get_validity, duckdb_scalar_function_set_error};
+use crate::duckdb::bindings::{duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector, duckdb_get_string, duckdb_library_version, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_scalar_function_info, duckdb_struct_vector_get_child, duckdb_vector, LogicalTypeId, duckdb_unified_vector_validity_row_is_valid, duckdb_vector_ensure_validity_writable, duckdb_validity_set_row_invalid, duckdb_vector_get_validity, duckdb_scalar_function_set_error, duckdb_vector_is_constant};
 use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::scalar_function::ScalarFunction;
 use crate::duckdb::vector::Vector;
@@ -79,6 +79,10 @@ unsafe fn stacktrace_matches(
     result: duckdb_vector,
 ) -> Result<()> {
     let count = duckdb_data_chunk_get_size(args);
+    if count == 0 {
+        return Ok(());
+    }
+
     let result_vector = Vector::from(result);
 
     let stacktrace_vector = duckdb_data_chunk_get_vector(args, 0);
@@ -93,11 +97,18 @@ unsafe fn stacktrace_matches(
     let name = duckdb_struct_vector_get_child(method, 1);
     let string = UnifiedVector::new(duckdb_struct_vector_get_child(name, 0), count);
 
-    let patterns = UnifiedVector::new(duckdb_data_chunk_get_vector(args, 1), count);
-    let p = patterns.get_string(0);
-    let p = from_raw_parts(p.data.cast::<u8>(), p.size as usize);
-    let p = std::str::from_utf8(p)?;
-    let regex = Regex::new(p)?;
+    let patterns_vec = duckdb_data_chunk_get_vector(args, 1);
+    let patterns = UnifiedVector::new(patterns_vec, count);
+
+    let constant_pattern = if duckdb_vector_is_constant(patterns_vec) {
+        // count is non-zero here
+        let p = patterns.get_string(0);
+        let p = from_raw_parts(p.data.cast::<u8>(), p.size as usize);
+        let p = std::str::from_utf8(p)?;
+        Some(Regex::new(p)?)
+    } else {
+        None
+    };
 
     for i in 0..count {
         let entry = frames
@@ -105,6 +116,22 @@ unsafe fn stacktrace_matches(
             .add(i as usize)
             .read();
         let mut matched = false;
+
+        let adhoc_pattern = if constant_pattern.is_none() {
+            let p = patterns.get_string(i);
+            let p = from_raw_parts(p.data.cast::<u8>(), p.size as usize);
+            let p = std::str::from_utf8(p)?;
+            Some(Regex::new(p)?)
+        } else {
+            None
+        };
+
+        let pattern = if let Some(r) = &constant_pattern {
+            r
+        } else {
+            adhoc_pattern.as_ref().unwrap()
+        };
+
         for j in 0..entry.length {
             let tpe_s = tpe_string.get_string(entry.offset + j);
             let tpe_s = from_raw_parts(tpe_s.data.cast::<u8>(), tpe_s.size as usize);
@@ -114,10 +141,9 @@ unsafe fn stacktrace_matches(
             let s = from_raw_parts(s.data.cast::<u8>(), s.size as usize);
             let s = std::str::from_utf8(s)?;
 
-            // println!("str: {}", s.to_str()?);
             let s2 = format!("{}.{}", tpe_s, s);
-            // let s2 = format!("{}", s.to_str()?);
-            if regex.is_match(s2.as_str()) {
+
+            if pattern.is_match(s2.as_str()) {
                 matched = true;
                 break;
             }

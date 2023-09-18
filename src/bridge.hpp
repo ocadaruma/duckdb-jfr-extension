@@ -209,7 +209,7 @@ void duckdb_scalar_function_set_function(duckdb_scalar_function scalar_function,
 /*!
 Register the scalar function object within the given connection.
 
-The function requires at least a name, a return type, a bind function, an init function and a main function.
+The function requires at least a name, a return type and a main function.
 
 If the function is invalid DuckDBError is returned.
 
@@ -218,45 +218,6 @@ If the function is invalid DuckDBError is returned.
 * returns: Whether or not the registration was successful.
 */
 duckdb_state duckdb_register_scalar_function(duckdb_connection connection, duckdb_scalar_function function);
-
-/*!
-Sets the user-provided bind data in the scalar function bind object.
-This object can be retrieved again during execution.
-
-* info: The info object
-* extra_data: The bind data object.
-* destroy: The callback that will be called to destroy the bind data (if any)
-*/
-void duckdb_scalar_function_set_bind_data(duckdb_scalar_function_info info, void *extra_data, duckdb_delete_callback_t destroy);
-
-/*!
-Sets the user-provided init data in the scalar function init object.
-This object can be retrieved again during execution.
-
-* info: The info object
-* extra_data: The bind data object.
-* destroy: The callback that will be called to destroy the bind data (if any)
-*/
-void duckdb_scalar_function_set_init_data(duckdb_scalar_function_info info, void *extra_data, duckdb_delete_callback_t destroy);
-
-/*!
-Gets the bind data set by `duckdb_scalar_bind_set_bind_data` during the bind.
-
-Note that the bind data should be considered as read-only.
-For tracking state, use the init data instead.
-
-* info: The info object
-* returns: The bind data object
-*/
-void *duckdb_scalar_function_get_bind_data(duckdb_scalar_function_info info);
-
-/*!
-Gets the init data set by `duckdb_scalar_init_set_init_data` during the init.
-
-* info: The info object
-* returns: The init data object
-*/
-void *duckdb_scalar_function_get_init_data(duckdb_scalar_function_info info);
 
 /*!
 Report that an error has occurred while executing the function.
@@ -313,5 +274,13 @@ Destroys the given unified vector format object.
  * vector: The vector
  */
 void duckdb_destroy_unified_vector_format(duckdb_unified_vector_format *vector);
+
+/*!
+Returns whether or not a vector is constant.
+
+ * vector: The vector
+ * returns: true if the vector is constant, false otherwise
+ */
+bool duckdb_vector_is_constant(duckdb_vector vector);
 
 }

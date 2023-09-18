@@ -110,4 +110,9 @@ void duckdb_destroy_unified_vector_format(duckdb_unified_vector_format *vector) 
     }
 }
 
+bool duckdb_vector_is_constant(duckdb_vector vector) {
+    auto v = reinterpret_cast<duckdb::Vector *>(vector);
+    return v->GetVectorType() == duckdb::VectorType::CONSTANT_VECTOR;
+}
+
 }
