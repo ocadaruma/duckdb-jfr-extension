@@ -248,12 +248,10 @@ void duckdb_scalar_function_set_function(duckdb_scalar_function scalar_function,
 
         bridge::CScalarInternalFunctionInfo function_info(bind_data, (bridge::CScalarInitData &) *lstate.local_state);
 
-        auto unified = args.ToUnifiedFormat();
         result.SetVectorType(duckdb::VectorType::FLAT_VECTOR);
         function(
                 &function_info,
                 reinterpret_cast<duckdb_data_chunk>(&args),
-                reinterpret_cast<duckdb_unified_data_chunk>(unified.get()),
                 reinterpret_cast<duckdb_vector>(&result));
         if (!function_info.success) {
             throw duckdb::Exception(function_info.error);

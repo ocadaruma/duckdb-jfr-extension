@@ -5,9 +5,6 @@
 
 extern "C" {
 typedef void *duckdb_client_context;
-typedef struct _duckdb_unified_data_chunk {
-    void *__dudc;
-} * duckdb_unified_data_chunk;
 typedef struct _duckdb_unified_vector_format {
     void *__duvf;
 } * duckdb_unified_vector_format;
@@ -159,7 +156,6 @@ typedef void *duckdb_scalar_function_info;
 typedef void (*duckdb_scalar_function_t)(
         duckdb_scalar_function_info info,
         duckdb_data_chunk args,
-        duckdb_unified_data_chunk unified_args,
         duckdb_vector result);
 
 /*!
@@ -289,28 +285,9 @@ The returned char pointer MUST not be freed.
  */
 string_piece duckdb_get_string(duckdb_unified_vector_format vector, idx_t index);
 
-/*!
-Get a string piece from a vector.
-
-The returned char pointer MUST not be freed.
-
- * vector: The vector to get the string piece from
- * index: The index in the vector
- * returns: The string piece
- */
-string_piece duckdb_get_string2(duckdb_vector vector, idx_t index);
-
 //===--------------------------------------------------------------------===//
 // Vector
 //===--------------------------------------------------------------------===//
-/*!
-Gets unified vector format from a data chunk.
-
- * chunk: The data chunk
- * returns: The unified vector format
- */
-duckdb_unified_vector_format duckdb_unified_data_chunk_get_vector(duckdb_unified_data_chunk chunk, idx_t column);
-
 /*!
 Returns whether or not a row is valid (i.e. not NULL) in a vector.
 
@@ -319,5 +296,22 @@ Returns whether or not a row is valid (i.e. not NULL) in a vector.
  * returns: true if the row is valid, false otherwise
  */
 bool duckdb_unified_vector_validity_row_is_valid(duckdb_unified_vector_format vector, idx_t row);
+
+/*!
+Converts a duckdb vector to unified vector format.
+Returned vector must be freed with `duckdb_destroy_unified_vector_format`.
+
+ * vector: The vector
+ * size: The size of the vector
+ * returns: The unified vector format
+ */
+duckdb_unified_vector_format duckdb_to_unified_format(duckdb_vector vector, idx_t size);
+
+/*!
+Destroys the given unified vector format object.
+
+ * vector: The vector
+ */
+void duckdb_destroy_unified_vector_format(duckdb_unified_vector_format *vector);
 
 }

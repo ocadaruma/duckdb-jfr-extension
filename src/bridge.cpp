@@ -89,15 +89,25 @@ string_piece duckdb_get_string2(duckdb_vector vector, idx_t index) {
     return string_piece{data[index].GetData(), data[index].GetSize()};
 }
 
-duckdb_unified_vector_format duckdb_unified_data_chunk_get_vector(duckdb_unified_data_chunk chunk, idx_t column) {
-    auto dchunk = reinterpret_cast<duckdb::UnifiedVectorFormat *>(chunk);
-    return reinterpret_cast<duckdb_unified_vector_format>(&dchunk[column]);
-}
-
 bool duckdb_unified_vector_validity_row_is_valid(duckdb_unified_vector_format vector, idx_t row) {
     auto fmt = reinterpret_cast<duckdb::UnifiedVectorFormat *>(vector);
     auto idx = fmt->sel->get_index(row);
     return fmt->validity.RowIsValid(idx);
+}
+
+duckdb_unified_vector_format duckdb_to_unified_format(duckdb_vector vector, idx_t size) {
+    auto v = reinterpret_cast<duckdb::Vector *>(vector);
+    auto fmt = new duckdb::UnifiedVectorFormat();
+    v->ToUnifiedFormat(size, *fmt);
+    return reinterpret_cast<duckdb_unified_vector_format>(fmt);
+}
+
+void duckdb_destroy_unified_vector_format(duckdb_unified_vector_format *vector) {
+    if (vector && *vector) {
+        auto fmt = (duckdb::UnifiedVectorFormat * ) * vector;
+        delete fmt;
+        *vector = nullptr;
+    }
 }
 
 }
