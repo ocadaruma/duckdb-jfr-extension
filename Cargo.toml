@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-jfrs = { version = "0.2.2", features = ["cstring"] }
+jfrs = { version = "0.2.4", features = ["cstring"] }
 rustc-hash = "1.1.0"
-anyhow = "1.0.72"
+anyhow = { version = "1.0.72", features = ["backtrace"] }
 regex = "1.9.4"
 
 [build-dependencies]

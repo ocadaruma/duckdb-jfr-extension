@@ -70,7 +70,7 @@ unsafe fn attach(context: duckdb_client_context, info: duckdb_function_info) -> 
     }
 
     let mut reader = JfrReader::new(FileHandle::open(context, bind_data.filename.as_str()));
-    if let Some(chunk) = reader.chunks().next() {
+    if let Some(chunk) = reader.chunk_metadata().next() {
         let (_, chunk) = chunk?;
         let mut types: Vec<&TypeDescriptor> = chunk.metadata.type_pool.get_types().collect();
         types.sort_by_key(|t| t.name());

@@ -47,21 +47,24 @@ unsafe fn bind(context: duckdb_client_context, info: duckdb_bind_info) -> Result
     let info = BindInfo::from_ptr(info);
 
     let filename = info.get_parameter(0).get_varchar().as_str()?.to_string();
-    let tablename = info.get_parameter(1).get_varchar().as_str()?.to_string();
+    let table_name = info.get_parameter(1).get_varchar().as_str()?.to_string();
 
     let mut reader = JfrReader::new(FileHandle::open(context, filename.as_str()));
-    // TODO
-    let (_, chunk) = reader.chunks().flatten().next().unwrap();
+    let (_, chunk) = reader
+        .chunk_metadata()
+        .next()
+        .ok_or(anyhow!("no chunk"))??;
 
-    let (root, _count) = JfrField::from_chunk(&chunk, tablename.as_str())?;
+    let (root, count) = JfrField::from_chunk(&chunk, table_name.as_str())?;
     for s in root.children.iter() {
         info.add_result_column(s.name.as_str(), &create_type(s)?)?;
     }
 
     info.set_bind_data(Box::new(ScanBindData {
         filename,
-        tablename,
+        table_name,
         schema: root,
+        field_count: count,
     }));
     Ok(())
 }
@@ -143,7 +146,7 @@ unsafe fn scan(
         .get_bind_data::<ScanBindData>()
         .ok_or(anyhow!("bind_data is null"))?;
     let filename = bind_data.filename.as_str();
-    let tablename = bind_data.tablename.as_str();
+    let table_name = bind_data.table_name.as_str();
 
     if init_data.done {
         output.set_size(0);
@@ -168,52 +171,56 @@ unsafe fn scan(
     }
 
     let vector_size = duckdb_vector_size() as usize;
-    let mut children_idx = vec![0usize; 1024]; // TODO grow
-    let mut vector_pool = vec![None; 1024]; // TODO grow
+    let mut children_idx = vec![0usize; bind_data.field_count];
+    let mut vector_pool = vec![None; bind_data.field_count];
 
-    let chunk_idx = init_data.chunk_idx;
+    let current_chunk_idx = init_data.chunk_idx;
     let mut row = 0;
 
-    let (mut reader, chunk) = init_data.chunks.swap_remove(chunk_idx as usize);
-    for event in reader.events_from_offset(&chunk, init_data.offset_in_chunk) {
-        let event = event.unwrap();
-        if event.class.name() != tablename {
-            continue;
-        }
-        if row >= vector_size {
-            init_data.offset_in_chunk = event.byte_offset;
-            init_data.chunks.insert(chunk_idx as usize, (reader, chunk));
-            output.set_size(row);
-            return Ok(());
-        }
-
-        for (i, field) in schema.children.iter().enumerate() {
-            if let Some(accessor) = event.value().get_field(field.name.as_str()) {
-                populate_column(
-                    row,
-                    duckdb_data_chunk_get_vector(output_raw, i as idx_t),
-                    &output,
-                    &chunk,
-                    field,
-                    accessor,
-                    &mut children_idx,
-                    &mut vector_pool,
-                );
-            } else {
-                set_null(
-                    duckdb_data_chunk_get_vector(output_raw, i as idx_t),
-                    row,
-                    field,
-                    &mut vector_pool,
-                    &mut children_idx,
-                );
+    for chunk_idx in current_chunk_idx..(init_data.chunks.len() as isize) {
+        let (mut reader, chunk) = init_data.chunks.swap_remove(chunk_idx as usize);
+        for event in reader.events_from_offset(&chunk, init_data.offset_in_chunk) {
+            let event = event?;
+            if event.class.name() != table_name {
+                continue;
             }
+            if row >= vector_size {
+                init_data.chunk_idx = chunk_idx;
+                init_data.offset_in_chunk = event.byte_offset;
+                init_data.chunks.insert(chunk_idx as usize, (reader, chunk));
+                output.set_size(row);
+                return Ok(());
+            }
+
+            for (i, field) in schema.children.iter().enumerate() {
+                if let Some(accessor) = event.value().get_field(field.name.as_str()) {
+                    populate_column(
+                        row,
+                        duckdb_data_chunk_get_vector(output_raw, i as idx_t),
+                        &output,
+                        &chunk,
+                        field,
+                        accessor,
+                        &mut children_idx,
+                        &mut vector_pool,
+                    );
+                } else {
+                    set_null(
+                        duckdb_data_chunk_get_vector(output_raw, i as idx_t),
+                        row,
+                        field,
+                        &mut vector_pool,
+                        &mut children_idx,
+                    );
+                }
+            }
+            row += 1;
         }
-        row += 1;
+        init_data.offset_in_chunk = 0;
+        init_data.chunks.insert(chunk_idx as usize, (reader, chunk));
     }
 
     init_data.done = true;
-    init_data.chunks.insert(chunk_idx as usize, (reader, chunk));
     output.set_size(row);
     Ok(())
 }
@@ -364,8 +371,9 @@ struct ScanInitData {
 
 struct ScanBindData {
     filename: String,
-    tablename: String,
+    table_name: String,
     schema: JfrField,
+    field_count: usize,
 }
 
 #[cfg(test)]
@@ -373,28 +381,49 @@ mod tests {
     use crate::duckdb::Database;
     use crate::jfr_scan::build_table_function_def;
     use crate::Result;
+    use duckdb::types::FromSql;
     use duckdb::Connection;
     use std::path::PathBuf;
 
     #[test]
-    fn test_count() -> Result<()> {
-        let db = Database::new_in_memory()?;
-        let conn = db.connect()?;
-        conn.register_table_function(&build_table_function_def()?)?;
-        let conn = unsafe { Connection::open_from_raw(db.ptr().cast())? };
-
+    fn test_count() {
         let jfr =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/async-profiler-wall.jfr");
-        let result: duckdb::Result<i64> = conn.query_row(
+        let result = query_single(
             format!(
                 "select count(*) from jfr_scan('{}', 'jdk.ExecutionSample')",
                 jfr.to_str().unwrap()
             )
             .as_str(),
-            [],
-            |row| row.get(0),
-        );
-        assert_eq!(428, result?);
-        Ok(())
+            0,
+        )
+        .unwrap();
+        assert_eq!(428, result);
+    }
+
+    #[test]
+    fn test_multiple_chunks() {
+        let jfr =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-multichunk.jfr");
+        let result = query_single(
+            format!(
+                "select count(*) from jfr_scan('{}', 'jdk.ExecutionSample')",
+                jfr.to_str().unwrap()
+            )
+            .as_str(),
+            0,
+        )
+        .unwrap();
+        assert_eq!(8888, result);
+    }
+
+    fn query_single<T: FromSql>(sql: &str, column_idx: usize) -> Result<T> {
+        let db = Database::new_in_memory()?;
+        let conn = db.connect()?;
+        conn.register_table_function(&build_table_function_def()?)?;
+        let conn = unsafe { Connection::open_from_raw(db.ptr().cast())? };
+
+        let result: duckdb::Result<T> = conn.query_row(sql, [], |row| row.get(column_idx));
+        Ok(result?)
     }
 }

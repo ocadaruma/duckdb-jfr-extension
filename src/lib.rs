@@ -23,16 +23,13 @@ use std::slice::from_raw_parts;
 type Result<T> = anyhow::Result<T>;
 
 // TODO:
-// - multi chunk
-// - error handlings
+// - error handling
 // - interval support
 // - projection pushdown
 // - cleanup comments
-// - malloc/free
-// - assign_string_element_len without memcpy?
 // - null handling in stacktrace_matches
-// - check why attach takes so long time
 // - wrap all raw C API calls (to prevent memory leaks / unsafes)
+// - performance optimization by dictionary vectors
 
 #[no_mangle]
 pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: duckdb_database) {

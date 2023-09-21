@@ -33,7 +33,7 @@ impl FunctionInfo {
 pub struct ScalarFunctionInfo(duckdb_scalar_function_info);
 
 impl ScalarFunctionInfo {
-    pub fn from(info: duckdb_scalar_function_info) -> Self {
+    pub fn from_ptr(info: duckdb_scalar_function_info) -> Self {
         Self(info)
     }
 }
