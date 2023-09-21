@@ -7,16 +7,12 @@ use crate::duckdb::vector::Vector;
 pub struct DataChunk(duckdb_data_chunk);
 
 impl DataChunk {
-    pub fn from(ptr: duckdb_data_chunk) -> Self {
+    pub fn from_ptr(ptr: duckdb_data_chunk) -> Self {
         Self(ptr)
     }
 
-    pub fn ptr(&self) -> duckdb_data_chunk {
-        self.0
-    }
-
     pub fn get_vector(&self, column_index: usize) -> Vector {
-        Vector::from(unsafe { duckdb_data_chunk_get_vector(self.0, column_index as idx_t) })
+        Vector::from_ptr(unsafe { duckdb_data_chunk_get_vector(self.0, column_index as idx_t) })
     }
 
     pub fn set_size(&self, size: usize) {

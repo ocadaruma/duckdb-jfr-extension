@@ -6,25 +6,24 @@ mod jfr_schema;
 use crate::duckdb::Database;
 
 use crate::duckdb::bindings::{
-    duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_data_chunk_get_vector,
-    duckdb_library_version, duckdb_list_entry, duckdb_scalar_function_info,
-    duckdb_scalar_function_set_error, duckdb_vector, LogicalTypeId,
+    duckdb_data_chunk, duckdb_data_chunk_get_size, duckdb_database, duckdb_library_version,
+    duckdb_list_entry, duckdb_scalar_function_info, duckdb_scalar_function_set_error,
+    duckdb_vector, LogicalTypeId,
 };
 
 use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::scalar_function::ScalarFunction;
-use crate::duckdb::unified_vector::UnifiedVector;
 use crate::duckdb::vector::Vector;
 use regex::Regex;
-use std::ffi::{c_char, c_void, CString};
+use std::ffi::{c_char, CString};
 
+use crate::duckdb::data_chunk::DataChunk;
 use std::slice::from_raw_parts;
 
 type Result<T> = anyhow::Result<T>;
 
 // TODO:
 // - multi chunk
-// - CString-pool fails with non-constant-pool-String
 // - error handlings
 // - interval support
 // - projection pushdown
@@ -32,17 +31,19 @@ type Result<T> = anyhow::Result<T>;
 // - malloc/free
 // - assign_string_element_len without memcpy?
 // - null handling in stacktrace_matches
+// - check why attach takes so long time
+// - wrap all raw C API calls (to prevent memory leaks / unsafes)
 
 #[no_mangle]
-pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: *mut c_void) {
+pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: duckdb_database) {
     let res = init(db);
     if let Err(err) = res {
         println!("Error: {}", err);
     }
 }
 
-unsafe fn init(db: *mut c_void) -> Result<()> {
-    let db = Database::from(db);
+unsafe fn init(db: duckdb_database) -> Result<()> {
+    let db = Database::from_ptr(db);
     let conn = db.connect()?;
     conn.register_table_function(&jfr_scan::build_table_function_def()?)?;
     conn.register_table_function(&jfr_attach::build_table_function_def()?)?;
@@ -82,8 +83,9 @@ unsafe fn stacktrace_matches(
         return Ok(());
     }
 
-    let result_vector = Vector::from(result);
-    let frames = Vector::from(duckdb_data_chunk_get_vector(args, 0)).get_struct_child(1);
+    let args = DataChunk::from_ptr(args);
+    let result_vector = Vector::from_ptr(result);
+    let frames = args.get_vector(0).get_struct_child(1);
     let method_vector = frames
         .get_list_child()
         .get_struct_child(0) // method
@@ -95,11 +97,11 @@ unsafe fn stacktrace_matches(
         .get_struct_child(0) // type
         .get_struct_child(1) // name
         .get_struct_child(0); // string
-    let unified_method = UnifiedVector::new(method_vector.ptr(), count);
-    let unified_type = UnifiedVector::new(type_vector.ptr(), count);
+    let unified_method = method_vector.to_unified_format(count);
+    let unified_type = type_vector.to_unified_format(count);
 
-    let patterns_vec = Vector::from(duckdb_data_chunk_get_vector(args, 1));
-    let patterns = UnifiedVector::new(patterns_vec.ptr(), count);
+    let patterns_vec = args.get_vector(1);
+    let patterns = patterns_vec.to_unified_format(count);
 
     let constant_pattern = if patterns_vec.is_constant() {
         // count is non-zero here

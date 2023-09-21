@@ -9,15 +9,11 @@ use crate::duckdb::logical_type::LogicalType;
 use crate::Result;
 use std::ffi::CString;
 
-pub struct TableFunction(duckdb_table_function);
+pub struct TableFunction(pub(in crate::duckdb) duckdb_table_function);
 
 impl TableFunction {
     pub fn new() -> Self {
         Self(unsafe { duckdb_create_table_function2() })
-    }
-
-    pub fn ptr(&self) -> duckdb_table_function {
-        self.0
     }
 
     pub fn set_name(&self, name: &str) -> Result<()> {
@@ -46,7 +42,7 @@ impl TableFunction {
     }
 
     pub fn add_parameter(&self, ty: &LogicalType) {
-        unsafe { duckdb_table_function_add_parameter(self.0, ty.ptr()) }
+        unsafe { duckdb_table_function_add_parameter(self.0, ty.0) }
     }
 }
 

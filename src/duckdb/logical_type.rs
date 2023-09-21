@@ -5,15 +5,11 @@ use crate::duckdb::bindings::{
 use crate::Result;
 use std::ffi::CString;
 
-pub struct LogicalType(duckdb_logical_type);
+pub struct LogicalType(pub(in crate::duckdb) duckdb_logical_type);
 
 impl LogicalType {
     pub fn new(ty: LogicalTypeId) -> Self {
         Self(unsafe { duckdb_create_logical_type(ty as duckdb_type) })
-    }
-
-    pub fn ptr(&self) -> duckdb_logical_type {
-        self.0
     }
 
     pub fn new_list_type(child_type: &LogicalType) -> Self {

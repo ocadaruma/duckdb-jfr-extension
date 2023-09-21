@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-jfrs = { version = "0.2.1", features = ["cstring"] }
+jfrs = { version = "0.2.2", features = ["cstring"] }
 rustc-hash = "1.1.0"
 anyhow = "1.0.72"
 regex = "1.9.4"
@@ -15,6 +15,9 @@ regex = "1.9.4"
 build_script = "0.2.0"
 cc = "1.0.83"
 bindgen = "0.66.1"
+
+[dev-dependencies]
+duckdb = "0.8.1"
 
 [profile.release]
 debug = true

@@ -7,12 +7,12 @@ use crate::duckdb::bindings::{
 use crate::duckdb::file::FileHandle;
 use crate::duckdb::function_info::FunctionInfo;
 use crate::duckdb::logical_type::LogicalType;
-use crate::duckdb::malloc_struct;
 use crate::duckdb::table_function::TableFunction;
 use crate::Result;
+use anyhow::anyhow;
 use jfrs::reader::type_descriptor::TypeDescriptor;
 use jfrs::reader::JfrReader;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::CString;
 
 pub fn build_table_function_def() -> Result<TableFunction> {
     let table_function = TableFunction::new();
@@ -37,15 +37,13 @@ unsafe extern "C" fn jfr_attach_init(_info: duckdb_init_info) {
 }
 
 unsafe fn bind(_context: duckdb_client_context, info: duckdb_bind_info) -> Result<()> {
-    let info = BindInfo::from(info);
+    let info = BindInfo::from_ptr(info);
+    let filename = info.get_parameter(0).get_varchar().as_str()?.to_string();
 
-    let param0 = info.get_parameter(0);
-    let filename = param0.get_varchar()?;
-
-    let bind_data = malloc_struct::<AttachBindData>();
-    (*bind_data).done = false;
-    (*bind_data).filename = filename.as_ptr().cast();
-    info.set_bind_data(bind_data.cast(), None);
+    info.set_bind_data(Box::new(AttachBindData {
+        done: false,
+        filename,
+    }));
     info.add_result_column("Success", &LogicalType::new(LogicalTypeId::Boolean))?;
     Ok(())
 }
@@ -63,17 +61,15 @@ unsafe extern "C" fn jfr_attach_func(
 }
 
 unsafe fn attach(context: duckdb_client_context, info: duckdb_function_info) -> Result<()> {
-    let info = FunctionInfo::from(info);
-    let bind_data = info.get_bind_data::<AttachBindData>().as_mut().unwrap();
-
+    let info = FunctionInfo::from_ptr(info);
+    let mut bind_data = info
+        .get_bind_data::<AttachBindData>()
+        .ok_or(anyhow!("bind_data is null"))?;
     if bind_data.done {
         return Ok(());
     }
 
-    let filename = CStr::from_ptr(bind_data.filename);
-    let filename_rs = filename.to_str()?;
-
-    let mut reader = JfrReader::new(FileHandle::open(context, filename_rs));
+    let mut reader = JfrReader::new(FileHandle::open(context, bind_data.filename.as_str()));
     if let Some(chunk) = reader.chunks().next() {
         let (_, chunk) = chunk?;
         let mut types: Vec<&TypeDescriptor> = chunk.metadata.type_pool.get_types().collect();
@@ -86,7 +82,7 @@ unsafe fn attach(context: duckdb_client_context, info: duckdb_function_info) -> 
                 Some("jdk.jfr.Event") if !tpe.fields.is_empty() => {
                     jfr_scan_create_view(
                         context,
-                        filename.as_ptr(),
+                        bind_data.filename.as_ptr().cast(),
                         CString::new(tpe.name())?.as_ptr(),
                     );
                 }
@@ -101,5 +97,5 @@ unsafe fn attach(context: duckdb_client_context, info: duckdb_function_info) -> 
 
 struct AttachBindData {
     done: bool,
-    filename: *const c_char,
+    filename: String,
 }

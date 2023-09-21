@@ -1,7 +1,7 @@
 use crate::duckdb::bind_info::BindInfo;
 use crate::duckdb::bindings::{
     duckdb_bind_info, duckdb_bind_set_error, duckdb_client_context, duckdb_data_chunk,
-    duckdb_data_chunk_get_vector, duckdb_free, duckdb_function_info, duckdb_function_set_error,
+    duckdb_data_chunk_get_vector, duckdb_function_info, duckdb_function_set_error,
     duckdb_init_info, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve,
     duckdb_list_vector_set_size, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid,
     duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity,
@@ -12,7 +12,6 @@ use crate::duckdb::file::FileHandle;
 use crate::duckdb::function_info::FunctionInfo;
 use crate::duckdb::init_info::InitInfo;
 use crate::duckdb::logical_type::LogicalType;
-use crate::duckdb::malloc_struct;
 use crate::duckdb::table_function::TableFunction;
 use crate::duckdb::vector::Vector;
 use crate::jfr_schema::JfrField;
@@ -21,9 +20,9 @@ use jfrs::reader::event::Accessor;
 use jfrs::reader::type_descriptor::{TickUnit, Unit};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 use jfrs::reader::{Chunk, ChunkReader, JfrReader};
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::CString;
 
-use std::mem::{forget, ManuallyDrop};
+use anyhow::anyhow;
 
 pub fn build_table_function_def() -> Result<TableFunction> {
     let table_function = TableFunction::new();
@@ -45,26 +44,25 @@ unsafe extern "C" fn jfr_scan_bind(context: duckdb_client_context, info: duckdb_
 }
 
 unsafe fn bind(context: duckdb_client_context, info: duckdb_bind_info) -> Result<()> {
-    let info = BindInfo::from(info);
+    let info = BindInfo::from_ptr(info);
 
-    let (param0, param1) = (info.get_parameter(0), info.get_parameter(1));
-    let filename = param0.get_varchar()?;
-    let tablename = param1.get_varchar()?;
+    let filename = info.get_parameter(0).get_varchar().as_str()?.to_string();
+    let tablename = info.get_parameter(1).get_varchar().as_str()?.to_string();
 
-    let mut reader = JfrReader::new(FileHandle::open(context, filename));
+    let mut reader = JfrReader::new(FileHandle::open(context, filename.as_str()));
     // TODO
     let (_, chunk) = reader.chunks().flatten().next().unwrap();
 
-    let (root, _count) = JfrField::from_chunk(&chunk, tablename)?;
+    let (root, _count) = JfrField::from_chunk(&chunk, tablename.as_str())?;
     for s in root.children.iter() {
         info.add_result_column(s.name.as_str(), &create_type(s)?)?;
     }
 
-    let bind_data = malloc_struct::<ScanBindData>();
-    (*bind_data).filename = filename.as_ptr().cast();
-    (*bind_data).tablename = tablename.as_ptr().cast();
-    (*bind_data).schema = ManuallyDrop::new(root);
-    info.set_bind_data(bind_data.cast(), None);
+    info.set_bind_data(Box::new(ScanBindData {
+        filename,
+        tablename,
+        schema: root,
+    }));
     Ok(())
 }
 
@@ -112,14 +110,13 @@ fn map_primitive_type(field: &JfrField) -> Option<LogicalType> {
 }
 
 unsafe extern "C" fn jfr_scan_init(info: duckdb_init_info) {
-    let info = InitInfo::from(info);
-    let init_data = malloc_struct::<ScanInitData>();
-    let d = init_data.as_mut().unwrap();
-    d.done = false;
-    d.chunk_idx = -1;
-    d.offset_in_chunk = 0;
-    // d.chunks = vec![];
-    info.set_init_data(init_data.cast(), Some(duckdb_free));
+    let info = InitInfo::from_ptr(info);
+    info.set_init_data(Box::new(ScanInitData {
+        done: false,
+        chunks: vec![],
+        chunk_idx: -1,
+        offset_in_chunk: 0,
+    }));
 }
 
 unsafe extern "C" fn jfr_scan_func(
@@ -137,10 +134,16 @@ unsafe fn scan(
     info: duckdb_function_info,
     output_raw: duckdb_data_chunk,
 ) -> Result<()> {
-    let info = FunctionInfo::from(info);
-    let output = DataChunk::from(output_raw);
-    let init_data = info.get_init_data::<ScanInitData>().as_mut().unwrap();
-    let bind_data = info.get_bind_data::<ScanBindData>().as_ref().unwrap();
+    let info = FunctionInfo::from_ptr(info);
+    let output = DataChunk::from_ptr(output_raw);
+    let mut init_data = info
+        .get_init_data::<ScanInitData>()
+        .ok_or(anyhow!("init_data is null"))?;
+    let bind_data = info
+        .get_bind_data::<ScanBindData>()
+        .ok_or(anyhow!("bind_data is null"))?;
+    let filename = bind_data.filename.as_str();
+    let tablename = bind_data.tablename.as_str();
 
     if init_data.done {
         output.set_size(0);
@@ -148,28 +151,19 @@ unsafe fn scan(
     }
 
     let schema = &bind_data.schema;
-    let filename = CStr::from_ptr(bind_data.filename);
-    let filename_rs = filename.to_str()?;
-    let tablename = CStr::from_ptr(bind_data.tablename);
-    let tablename_rs = tablename.to_str()?;
 
     // Read all data into memory first
     if init_data.chunk_idx < 0 {
-        // let mut reader = JfrReader::new(File::open(filename_rs)?);
-        let mut reader = JfrReader::new(FileHandle::open(context, filename_rs));
-        // let mut reader = JfrReader::new(Cursor::new(SAMPLE_FILE));
-        let mut chunks = vec![];
+        let mut reader = JfrReader::new(FileHandle::open(context, filename));
         for chunk in reader.chunks() {
             let (r, c) = chunk?;
-            chunks.push((ManuallyDrop::new(r), ManuallyDrop::new(c)));
+            init_data.chunks.push((r, c));
         }
-        if chunks.is_empty() {
+        if init_data.chunks.is_empty() {
             init_data.done = true;
             output.set_size(0);
             return Ok(());
         }
-        init_data.chunks = chunks.as_mut_ptr();
-        forget(chunks);
         init_data.chunk_idx = 0;
     }
 
@@ -180,17 +174,16 @@ unsafe fn scan(
     let chunk_idx = init_data.chunk_idx;
     let mut row = 0;
 
-    let (mut reader, chunk) = init_data.chunks.offset(chunk_idx).read();
+    let (mut reader, chunk) = init_data.chunks.swap_remove(chunk_idx as usize);
     for event in reader.events_from_offset(&chunk, init_data.offset_in_chunk) {
         let event = event.unwrap();
-        if event.class.name() != tablename_rs {
+        if event.class.name() != tablename {
             continue;
         }
         if row >= vector_size {
             init_data.offset_in_chunk = event.byte_offset;
+            init_data.chunks.insert(chunk_idx as usize, (reader, chunk));
             output.set_size(row);
-            // forget(reader);
-            // forget(chunk);
             return Ok(());
         }
 
@@ -219,10 +212,8 @@ unsafe fn scan(
         row += 1;
     }
 
-    // forget(reader);
-    // forget(chunk);
-
     init_data.done = true;
+    init_data.chunks.insert(chunk_idx as usize, (reader, chunk));
     output.set_size(row);
     Ok(())
 }
@@ -243,7 +234,6 @@ unsafe fn set_null(
     // refs: https://arrow.apache.org/docs/12.0/format/Columnar.html#struct-validity
     if !field.children.is_empty() && !field.is_array {
         for (i, s) in field.children.iter().filter(|s| s.valid).enumerate() {
-            // println!("set_null_recursive: idx: {}, name: {}, type: {}", s.idx, s.name, s.type_name);
             if vector_pool[s.idx].is_none() {
                 vector_pool[s.idx] = Some(duckdb_struct_vector_get_child(vector, i as idx_t));
             }
@@ -285,14 +275,22 @@ unsafe fn populate_column(
             Primitive::Float(v) => assign(vector, row_idx, *v),
             Primitive::Double(v) => assign(vector, row_idx, *v),
             Primitive::Character(v) => {
-                Vector::from(vector).assign_string_element_len(row_idx, v.string.as_ptr(), v.len);
+                Vector::from_ptr(vector).assign_string_element_len(
+                    row_idx,
+                    v.string.as_ptr(),
+                    v.len,
+                );
             }
             Primitive::Boolean(v) => assign(vector, row_idx, *v),
             Primitive::Short(v) => assign(vector, row_idx, *v),
             Primitive::Byte(v) => assign(vector, row_idx, *v),
             Primitive::NullString => set_null(vector, row_idx, child, vector_pool, children_idx),
             Primitive::String(s) => {
-                Vector::from(vector).assign_string_element_len(row_idx, s.string.as_ptr(), s.len);
+                Vector::from_ptr(vector).assign_string_element_len(
+                    row_idx,
+                    s.string.as_ptr(),
+                    s.len,
+                );
             }
         },
         Some(ValueDescriptor::Object(obj)) => {
@@ -336,7 +334,7 @@ unsafe fn populate_column(
                     vector_pool,
                 );
             }
-            Vector::from(vector)
+            Vector::from_ptr(vector)
                 .get_data::<duckdb_list_entry>()
                 .add(row_idx)
                 .write(duckdb_list_entry {
@@ -353,19 +351,50 @@ unsafe fn populate_column(
 }
 
 unsafe fn assign<T>(vector: duckdb_vector, row_idx: usize, value: T) {
-    let vector = Vector::from(vector);
+    let vector = Vector::from_ptr(vector);
     vector.get_data::<T>().add(row_idx).write(value);
 }
 
 struct ScanInitData {
     done: bool,
-    chunks: *mut (ManuallyDrop<ChunkReader>, ManuallyDrop<Chunk>),
+    chunks: Vec<(ChunkReader, Chunk)>,
     chunk_idx: isize,
     offset_in_chunk: u64,
 }
 
 struct ScanBindData {
-    filename: *const c_char,
-    tablename: *const c_char,
-    schema: ManuallyDrop<JfrField>,
+    filename: String,
+    tablename: String,
+    schema: JfrField,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::duckdb::Database;
+    use crate::jfr_scan::build_table_function_def;
+    use crate::Result;
+    use duckdb::Connection;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_count() -> Result<()> {
+        let db = Database::new_in_memory()?;
+        let conn = db.connect()?;
+        conn.register_table_function(&build_table_function_def()?)?;
+        let conn = unsafe { Connection::open_from_raw(db.ptr().cast())? };
+
+        let jfr =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/async-profiler-wall.jfr");
+        let result: duckdb::Result<i64> = conn.query_row(
+            format!(
+                "select count(*) from jfr_scan('{}', 'jdk.ExecutionSample')",
+                jfr.to_str().unwrap()
+            )
+            .as_str(),
+            [],
+            |row| row.get(0),
+        );
+        assert_eq!(428, result?);
+        Ok(())
+    }
 }

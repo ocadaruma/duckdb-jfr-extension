@@ -8,15 +8,11 @@ use crate::duckdb::logical_type::LogicalType;
 use crate::Result;
 use std::ffi::CString;
 
-pub struct ScalarFunction(duckdb_scalar_function);
+pub struct ScalarFunction(pub(in crate::duckdb) duckdb_scalar_function);
 
 impl ScalarFunction {
     pub fn new() -> Self {
         Self(unsafe { duckdb_create_scalar_function() })
-    }
-
-    pub fn ptr(&self) -> duckdb_scalar_function {
-        self.0
     }
 
     pub fn set_name(&self, name: &str) -> Result<()> {
@@ -28,7 +24,7 @@ impl ScalarFunction {
 
     pub fn set_return_type(&self, ty: &LogicalType) {
         unsafe {
-            duckdb_scalar_function_set_return_type(self.0, ty.ptr());
+            duckdb_scalar_function_set_return_type(self.0, ty.0);
         }
     }
 
@@ -39,7 +35,7 @@ impl ScalarFunction {
     }
 
     pub fn add_parameter(&self, ty: &LogicalType) {
-        unsafe { duckdb_scalar_function_add_parameter(self.0, ty.ptr()) }
+        unsafe { duckdb_scalar_function_add_parameter(self.0, ty.0) }
     }
 }
 
