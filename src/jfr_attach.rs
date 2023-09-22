@@ -1,13 +1,14 @@
 use crate::duckdb::bind_info::BindInfo;
 use crate::duckdb::bindings::{
     duckdb_bind_info, duckdb_bind_set_error, duckdb_client_context, duckdb_data_chunk,
-    duckdb_function_info, duckdb_function_set_error, duckdb_init_info, jfr_scan_create_view,
-    LogicalTypeId,
+    duckdb_function_info, duckdb_function_set_error, duckdb_init_info, LogicalTypeId,
 };
 use crate::duckdb::file::FileHandle;
 use crate::duckdb::function_info::FunctionInfo;
 use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::table_function::TableFunction;
+use crate::duckdb::value::Value;
+use crate::duckdb::view::TableFunctionView;
 use crate::Result;
 use anyhow::anyhow;
 use jfrs::reader::type_descriptor::TypeDescriptor;
@@ -80,11 +81,12 @@ unsafe fn attach(context: duckdb_client_context, info: duckdb_function_info) -> 
                 // https://github.com/adoptium/jdk11u/blob/jdk-11.0.21%2B6/src/jdk.jfr/share/classes/jdk/jfr/internal/MetadataReader.java#L223
                 // https://github.com/adoptium/jdk11u/blob/jdk-11.0.21%2B6/src/jdk.jfr/share/classes/jdk/jfr/internal/MetadataReader.java#L260-L261
                 Some("jdk.jfr.Event") if !tpe.fields.is_empty() => {
-                    jfr_scan_create_view(
-                        context,
-                        bind_data.filename.as_ptr().cast(),
-                        CString::new(tpe.name())?.as_ptr(),
-                    );
+                    let view = TableFunctionView::new();
+                    view.set_name(tpe.name())?;
+                    view.set_function_name("jfr_scan")?;
+                    view.add_parameter(&Value::new_varchar(bind_data.filename.as_str())?);
+                    view.add_parameter(&Value::new_varchar(tpe.name())?);
+                    view.register(context)?;
                 }
                 _ => {}
             }

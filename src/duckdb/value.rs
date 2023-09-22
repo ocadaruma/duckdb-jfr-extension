@@ -1,13 +1,20 @@
 use crate::duckdb::bindings::{
-    duckdb_destroy_value, duckdb_free, duckdb_get_varchar, duckdb_value,
+    duckdb_create_varchar_length, duckdb_destroy_value, duckdb_free, duckdb_get_varchar,
+    duckdb_value, idx_t,
 };
 use crate::Result;
 use anyhow::anyhow;
-use std::ffi::{c_char, CStr};
+use std::ffi::{c_char, CStr, CString};
 
 pub struct Value(pub(in crate::duckdb) duckdb_value);
 
 impl Value {
+    pub fn new_varchar(s: &str) -> Result<Self> {
+        Ok(Self(unsafe {
+            duckdb_create_varchar_length(CString::new(s)?.as_ptr(), s.len() as idx_t)
+        }))
+    }
+
     pub fn get_varchar(&self) -> ValueVarchar {
         ValueVarchar::new(unsafe { duckdb_get_varchar(self.0) })
     }

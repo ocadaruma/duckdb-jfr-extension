@@ -12,6 +12,7 @@ pub mod table_function;
 pub mod unified_vector;
 pub mod value;
 pub mod vector;
+pub mod view;
 
 use crate::duckdb::bindings::{
     duckdb_close, duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect,

@@ -36,13 +36,6 @@ static duckdb::child_list_t<duckdb::LogicalType> getVector(
 
 extern "C" {
 
-void jfr_scan_create_view(duckdb_client_context context, const char *filename, const char *tablename) {
-    auto ctx = (duckdb::ClientContext *) context;
-    auto conn = duckdb::Connection(ctx->db->GetDatabase(*ctx));
-    conn.TableFunction("jfr_scan", {Value(filename), Value(tablename)})
-            ->CreateView(tablename, true, false);
-}
-
 duckdb_file_handle duckdb_open_file(duckdb_client_context context, const char *path, uint8_t flags) {
     auto &fs = ((duckdb::ClientContext *) context)->db->GetFileSystem();
     auto handle = fs.OpenFile(path, flags);

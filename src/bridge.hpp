@@ -10,12 +10,58 @@ typedef struct _duckdb_unified_vector_format {
 } * duckdb_unified_vector_format;
 
 //===--------------------------------------------------------------------===//
-// duckdb-jfr-extension specific C APIs
+// View API
 //===--------------------------------------------------------------------===//
-void jfr_scan_create_view(
-        duckdb_client_context,
-        const char* filename,
-        const char* tablename);
+typedef void *duckdb_table_function_view;
+
+/*!
+Creates a new empty table function view.
+
+The return value should be destroyed with `duckdb_destroy_table_function_view`.
+
+* returns: The table function view object.
+*/
+duckdb_table_function_view duckdb_create_table_function_view();
+
+/*!
+Sets the name of table function to be called by this view.
+
+* view: The table function view
+* name: The name of the table function
+*/
+void duckdb_table_function_view_set_function_name(duckdb_table_function_view view, const char *function_name);
+
+/*!
+Sets the name of the view.
+
+* view: The table function view
+* name: The name of the view
+*/
+void duckdb_table_function_view_set_name(duckdb_table_function_view view, const char *name);
+
+/*!
+Adds a parameter to the table function to be called by this view.
+
+* view: The table function view
+* value: The value of the parameter to add.
+*/
+void duckdb_table_function_view_add_parameter(duckdb_table_function_view view, duckdb_value value);
+
+/*!
+Register the table function view.
+
+* context: The client context to register it in.
+* view: The table function view object
+* returns: Whether or not the registration was successful.
+*/
+duckdb_state duckdb_register_table_function_view(duckdb_client_context context, duckdb_table_function_view view);
+
+/*!
+Destroys the given table function view object.
+
+* view: The table function view to destroy
+*/
+void duckdb_destroy_table_function_view(duckdb_table_function_view *view);
 
 //===--------------------------------------------------------------------===//
 // Logical Type Interface

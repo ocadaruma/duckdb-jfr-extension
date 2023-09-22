@@ -19,6 +19,12 @@ using duckdb::Value;
 namespace bridge {
     using namespace duckdb;
 
+    struct CTableFunctionView {
+        string function_name;
+        string name;
+        vector<Value> parameters;
+    };
+
     struct CTableFunctionInfo : public TableFunctionInfo {
         ~CTableFunctionInfo() {
             if (extra_info && delete_callback) {
@@ -260,6 +266,57 @@ void *duckdb_function2_get_init_data(duckdb_function_info info) {
     }
     auto function_info = (bridge::CTableInternalFunctionInfo *) info;
     return function_info->init_data.init_data;
+}
+
+duckdb_table_function_view duckdb_create_table_function_view() {
+    return new bridge::CTableFunctionView();
+}
+
+void duckdb_table_function_view_set_function_name(duckdb_table_function_view view, const char *function_name) {
+    if (!view || !function_name) {
+        return;
+    }
+    auto tfv = (bridge::CTableFunctionView *) view;
+    tfv->function_name = function_name;
+}
+
+void duckdb_table_function_view_set_name(duckdb_table_function_view view, const char *name) {
+    if (!view || !name) {
+        return;
+    }
+    auto tfv = (bridge::CTableFunctionView *) view;
+    tfv->name = name;
+}
+
+void duckdb_table_function_view_add_parameter(duckdb_table_function_view view, duckdb_value value) {
+    if (!view || !value) {
+        return;
+    }
+    auto tfv = (bridge::CTableFunctionView *) view;
+    auto val = (duckdb::Value *) value;
+    tfv->parameters.push_back(*val);
+}
+
+duckdb_state duckdb_register_table_function_view(duckdb_client_context context, duckdb_table_function_view view) {
+    if (!context || !view) {
+        return DuckDBError;
+    }
+    auto ctx = (duckdb::ClientContext *) context;
+    auto conn = duckdb::Connection(ctx->db->GetDatabase(*ctx));
+    auto tfv = (bridge::CTableFunctionView *) view;
+    if (tfv->function_name.empty() || tfv->name.empty()) {
+        return DuckDBError;
+    }
+    conn.TableFunction(tfv->function_name, tfv->parameters)->CreateView(tfv->name, true, false);
+    return DuckDBSuccess;
+}
+
+void duckdb_destroy_table_function_view(duckdb_table_function_view *view) {
+    if (view && *view) {
+        auto tfv = (bridge::CTableFunctionView *) *view;
+        delete tfv;
+        *view = nullptr;
+    }
 }
 
 }
