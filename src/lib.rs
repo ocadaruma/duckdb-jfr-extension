@@ -18,6 +18,8 @@ type Result<T> = anyhow::Result<T>;
 // - projection pushdown
 // - cleanup comments
 // - null handling in stacktrace_matches
+// - add tests
+// - stacktrace_matches: unify match target with jfr-analytics
 // - wrap all raw C API calls (to prevent memory leaks / unsafes)
 // - performance optimization by dictionary vectors
 

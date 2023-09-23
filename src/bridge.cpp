@@ -1,25 +1,5 @@
-#include "duckdb.hpp"
-#include "duckdb/main/capi/capi_internal.hpp"
-#include "duckdb/common/assert.hpp"
-#include "duckdb/function/scalar_function.hpp"
-#include "duckdb/function/table_function.hpp"
-#include "duckdb/parser/parsed_data/create_table_function_info.hpp"
-#include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
-#include "duckdb/planner/expression/bound_function_expression.hpp"
-#include "duckdb/execution/expression_executor.hpp"
-#include "duckdb/common/helper.hpp"
 #include "bridge.hpp"
-
-#include <iostream>
-#include <memory>
-
-using duckdb::Connection;
-using duckdb::DuckDB;
-using duckdb::Value;
-
-namespace bridge {
-    using namespace duckdb;
-}
+#include "duckdb.hpp"
 
 static duckdb::child_list_t<duckdb::LogicalType> getVector(
         idx_t n_pairs,

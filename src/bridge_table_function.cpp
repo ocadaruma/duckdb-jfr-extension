@@ -1,18 +1,6 @@
-#include "duckdb.hpp"
-#include "duckdb/main/capi/capi_internal.hpp"
-#include "duckdb/common/assert.hpp"
-#include "duckdb/function/table_function.hpp"
-#include "duckdb/parser/parsed_data/create_table_function_info.hpp"
-#include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
-#include "duckdb/common/helper.hpp"
 #include "bridge.hpp"
-
-#include <iostream>
-#include <memory>
-
-using duckdb::Connection;
-using duckdb::DuckDB;
-using duckdb::Value;
+#include "duckdb.hpp"
+#include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 
 /// Taken from table_function-c.cpp
 
