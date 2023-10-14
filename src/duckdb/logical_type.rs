@@ -1,5 +1,5 @@
 use crate::duckdb::bindings::{
-    duckdb_create_list_type, duckdb_create_logical_type, duckdb_create_struct_type,
+    duckdb_create_list_type, duckdb_create_logical_type, duckdb_create_struct_type2,
     duckdb_destroy_logical_type, duckdb_logical_type, duckdb_type, LogicalTypeId,
 };
 use crate::Result;
@@ -25,7 +25,7 @@ impl LogicalType {
         let key_ptrs: Vec<_> = keys.iter().map(|s| s.as_ptr()).collect();
 
         Ok(Self(unsafe {
-            duckdb_create_struct_type(
+            duckdb_create_struct_type2(
                 keys.len() as u64,
                 key_ptrs.as_slice().as_ptr().cast_mut(),
                 values.as_slice().as_ptr(),

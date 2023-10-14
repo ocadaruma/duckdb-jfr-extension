@@ -3,7 +3,7 @@ use crate::duckdb::bindings::{
     duckdb_table_function2_bind_t, duckdb_table_function2_set_bind,
     duckdb_table_function2_set_function, duckdb_table_function2_set_init, duckdb_table_function2_t,
     duckdb_table_function_add_parameter, duckdb_table_function_init_t,
-    duckdb_table_function_set_name,
+    duckdb_table_function_set_name, duckdb_table_function_supports_projection_pushdown
 };
 use crate::duckdb::logical_type::LogicalType;
 use crate::Result;
@@ -21,6 +21,12 @@ impl TableFunction {
             duckdb_table_function_set_name(self.0, CString::new(name)?.as_ptr());
         }
         Ok(())
+    }
+
+    pub fn set_supports_projection_pushdown(&self, supports: bool) {
+        unsafe {
+            duckdb_table_function_supports_projection_pushdown(self.0, supports);
+        }
     }
 
     pub fn set_function(&self, f: duckdb_table_function2_t) {

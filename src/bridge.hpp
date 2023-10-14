@@ -3,6 +3,7 @@
 #endif
 #include "duckdb.h"
 
+
 extern "C" {
 typedef void *duckdb_client_context;
 typedef struct _duckdb_unified_vector_format {
@@ -66,7 +67,7 @@ void duckdb_destroy_table_function_view(duckdb_table_function_view *view);
 //===--------------------------------------------------------------------===//
 // Logical Type Interface
 //===--------------------------------------------------------------------===//
-duckdb_logical_type duckdb_create_struct_type(
+duckdb_logical_type duckdb_create_struct_type2(
         idx_t n_pairs,
         const char** names,
         const duckdb_logical_type* types);

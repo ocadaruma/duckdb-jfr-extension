@@ -32,6 +32,7 @@ pub fn build_table_function_def() -> Result<TableFunction> {
     table_function.set_function(Some(jfr_scan_func));
     table_function.set_init(Some(jfr_scan_init));
     table_function.set_bind(Some(jfr_scan_bind));
+    table_function.set_supports_projection_pushdown(true);
     Ok(table_function)
 }
 
@@ -114,11 +115,16 @@ fn map_primitive_type(field: &JfrField) -> Option<LogicalType> {
 
 unsafe extern "C" fn jfr_scan_init(info: duckdb_init_info) {
     let info = InitInfo::from_ptr(info);
+    let mut projection = vec![];
+    for i in 0..info.projected_column_count() {
+        projection.push(info.column_index(i));
+    }
     info.set_init_data(Box::new(ScanInitData {
         done: false,
         chunks: vec![],
         chunk_idx: -1,
         offset_in_chunk: 0,
+        projection,
     }));
 }
 
@@ -192,11 +198,14 @@ unsafe fn scan(
                 return Ok(());
             }
 
-            for (i, field) in schema.children.iter().enumerate() {
+            for p in 0..init_data.projection.len() {
+                let i = init_data.projection[p];
+                let field = &schema.children[i];
+
                 if let Some(accessor) = event.value().get_field(field.name.as_str()) {
                     populate_column(
                         row,
-                        duckdb_data_chunk_get_vector(output_raw, i as idx_t),
+                        duckdb_data_chunk_get_vector(output_raw, p as idx_t),
                         &output,
                         &chunk,
                         field,
@@ -206,7 +215,7 @@ unsafe fn scan(
                     );
                 } else {
                     set_null(
-                        duckdb_data_chunk_get_vector(output_raw, i as idx_t),
+                        duckdb_data_chunk_get_vector(output_raw, p as idx_t),
                         row,
                         field,
                         &mut vector_pool,
@@ -367,6 +376,7 @@ struct ScanInitData {
     chunks: Vec<(ChunkReader, Chunk)>,
     chunk_idx: isize,
     offset_in_chunk: u64,
+    projection: Vec<usize>,
 }
 
 struct ScanBindData {

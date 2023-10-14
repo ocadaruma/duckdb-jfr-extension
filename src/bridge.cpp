@@ -38,7 +38,7 @@ void duckdb_file_close(duckdb_file_handle handle) {
     delete (duckdb::FileHandle *) handle;
 }
 
-duckdb_logical_type duckdb_create_struct_type(
+duckdb_logical_type duckdb_create_struct_type2(
         idx_t n_pairs,
         const char **names,
         const duckdb_logical_type *types) {
