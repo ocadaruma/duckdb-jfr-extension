@@ -1,6 +1,5 @@
 use crate::duckdb::bindings::{
     duckdb_function2_get_bind_data, duckdb_function2_get_init_data, duckdb_function_info,
-    duckdb_scalar_function_info,
 };
 use std::mem::ManuallyDrop;
 
@@ -27,13 +26,5 @@ impl FunctionInfo {
         } else {
             Some(ManuallyDrop::new(unsafe { Box::from_raw(ptr) }))
         }
-    }
-}
-
-pub struct ScalarFunctionInfo(duckdb_scalar_function_info);
-
-impl ScalarFunctionInfo {
-    pub fn from_ptr(info: duckdb_scalar_function_info) -> Self {
-        Self(info)
     }
 }

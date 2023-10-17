@@ -1,43 +1,39 @@
-.PHONY: loadable-extension wasm download submodules start-duckdb lldb fmt test clean
-
 PROJECT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
-export LD_LIBRARY_PATH := $(PROJECT_DIR)/duckdb-downloaded-lib
-export DYLD_LIBRARY_PATH := $(PROJECT_DIR)/duckdb-downloaded-lib
+.PHONY: duckdb-sources
+duckdb-sources:
+	$(PROJECT_DIR)/download-duckdb-sources.sh
 
-BUILD_FLAGS=-DEXTENSION_STATIC_BUILD=1 ${OSX_BUILD_UNIVERSAL_FLAG}
-
-download:
-	$(PROJECT_DIR)/download-duckdb-lib.sh
-
+.PHONY: submodules
 submodules:
 	git submodule update --init --recursive
 
-loadable-extension: download submodules
-	cargo rustc --release --crate-type cdylib
+.PHONY: loadable-extension-debug
+loadable-extension-debug: duckdb-sources
+	cargo rustc
 
-wasm: download submodules
-	cargo rustc --release --target wasm32-unknown-emscripten --crate-type staticlib
+.PHONY: loadable-extension-release
+loadable-extension-release: duckdb-sources
+	cargo rustc --release
 
-start-duckdb: loadable-extension
-	$(PROJECT_DIR)/duckdb-downloaded-lib/duckdb -unsigned -init .duckdbrc
+.PHONY: wasm-debug
+wasm-debug: duckdb-sources submodules
+	cargo rustc --target wasm32-unknown-emscripten --no-default-features --crate-type staticlib
 
-lldb: loadable-extension
-	lldb $(PROJECT_DIR)/duckdb-downloaded-lib/duckdb --local-lldbinit -- -unsigned -init .duckdbrc
+.PHONY: wasm-release
+wasm-release: duckdb-sources submodules
+	cargo rustc --release --target wasm32-unknown-emscripten --no-default-features --crate-type staticlib
 
-static:
-	mkdir -p build/release && \
-	cd build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) -DCMAKE_BUILD_TYPE=RelWithDebInfo ${BUILD_FLAGS} ../../duckdb/CMakeLists.txt -DEXTERNAL_EXTENSION_DIRECTORIES=../../duckdb-jfr-extension -B. && \
-	cmake --build . --config Release
-
+.PHONY: fmt
 fmt:
 	cargo fix
 	cargo fmt
 	cargo clippy
 
+.PHONY: test
 test:
 	cargo test
 
+.PHONY: clean
 clean:
 	cargo clean

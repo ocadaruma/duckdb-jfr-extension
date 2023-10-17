@@ -3,27 +3,29 @@ name = "duckdb-jfr-extension"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["build-duckdb"]
+build-duckdb = []
 
 [dependencies]
-jfrs = { version = "0.2.4", features = ["cstring"] }
-rustc-hash = "1.1.0"
-anyhow = { version = "1.0.72", features = ["backtrace"] }
-regex = "1.9.4"
+jfrs = { version = "=0.2.4", features = ["cstring"] }
+rustc-hash = "=1.1.0"
+anyhow = { version = "=1.0.72", features = ["backtrace"] }
+regex = "=1.9.4"
 
 [build-dependencies]
-build_script = "0.2.0"
-cc = "1.0.83"
-bindgen = "0.66.1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
+build_script = "=0.2.0"
+cc = { version = "=1.0.83", features = ["parallel"] }
+bindgen = "=0.66.1"
+serde = { version = "=1.0.189", features = ["derive"] }
+serde_json = { version = "=1.0.189" }
 
 [dev-dependencies]
-duckdb = "0.8.1"
+duckdb = { version = "=0.9.1", features = ["bundled"] }
 
 [profile.release]
 debug = true
 
 [lib]
 name = "duckdb_jfr_extension"
-crate-type = ["staticlib"]
+crate-type = ["cdylib"]

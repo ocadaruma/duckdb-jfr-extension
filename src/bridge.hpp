@@ -65,14 +65,6 @@ Destroys the given table function view object.
 void duckdb_destroy_table_function_view(duckdb_table_function_view *view);
 
 //===--------------------------------------------------------------------===//
-// Logical Type Interface
-//===--------------------------------------------------------------------===//
-duckdb_logical_type duckdb_create_struct_type2(
-        idx_t n_pairs,
-        const char** names,
-        const duckdb_logical_type* types);
-
-//===--------------------------------------------------------------------===//
 // Table Functions
 // These are modified version of original duckdb C APIs to support
 // init/bind/function variants which accepts ClientContext
@@ -194,85 +186,6 @@ Close the file handle.
  * handle: The file handle
  */
 void duckdb_file_close(duckdb_file_handle handle);
-
-//===--------------------------------------------------------------------===//
-// Scalar Functions
-//===--------------------------------------------------------------------===//
-typedef void *duckdb_scalar_function;
-typedef void *duckdb_scalar_function_info;
-typedef void (*duckdb_scalar_function_t)(
-        duckdb_scalar_function_info info,
-        duckdb_data_chunk args,
-        duckdb_vector result);
-
-/*!
-Creates a new empty scalar function.
-
-The return value should be destroyed with `duckdb_destroy_scalar_function`.
-
-* returns: The scalar function object.
-*/
-duckdb_scalar_function duckdb_create_scalar_function();
-
-/*!
-Destroys the given scalar function object.
-
-* function: The scalar function to destroy
-*/
-void duckdb_destroy_scalar_function(duckdb_scalar_function *function);
-
-/*!
-Sets the name of the given scalar function.
-
-* function: The scalar function
-* name: The name of the scalar function
-*/
-void duckdb_scalar_function_set_name(duckdb_scalar_function function, const char *name);
-
-/*!
-Sets the return type of the given scalar function.
-
-* function: The scalar function
-* type: The return type of the scalar function
-*/
-void duckdb_scalar_function_set_return_type(duckdb_scalar_function function, duckdb_logical_type type);
-
-/*!
-Adds a parameter to the scalar function.
-
-* function: The scalar function
-* type: The type of the parameter to add.
-*/
-void duckdb_scalar_function_add_parameter(duckdb_scalar_function function, duckdb_logical_type type);
-
-/*!
-Sets the main function of the scalar function
-
-* scalar_function: The scalar function
-* function: The function
-*/
-void duckdb_scalar_function_set_function(duckdb_scalar_function scalar_function, duckdb_scalar_function_t function);
-
-/*!
-Register the scalar function object within the given connection.
-
-The function requires at least a name, a return type and a main function.
-
-If the function is invalid DuckDBError is returned.
-
-* connection: The connection to register it in.
-* function: The function pointer
-* returns: Whether or not the registration was successful.
-*/
-duckdb_state duckdb_register_scalar_function(duckdb_connection connection, duckdb_scalar_function function);
-
-/*!
-Report that an error has occurred while executing the function.
-
-* info: The info object
-* error: The error message
-*/
-void duckdb_scalar_function_set_error(duckdb_scalar_function_info info, const char *error);
 
 //===--------------------------------------------------------------------===//
 // C APIs for strings

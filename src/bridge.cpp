@@ -1,19 +1,6 @@
 #include "bridge.hpp"
 #include "duckdb.hpp"
 
-static duckdb::child_list_t<duckdb::LogicalType> getVector(
-        idx_t n_pairs,
-        const char *const *names,
-        duckdb_logical_type const *types) {
-    duckdb::child_list_t<duckdb::LogicalType> members;
-    for (idx_t i = 0; i < n_pairs; i++) {
-        members.emplace_back(
-            std::string(names[i]),
-            *(duckdb::LogicalType *) types[i]);
-    }
-    return members;
-}
-
 extern "C" {
 
 duckdb_file_handle duckdb_open_file(duckdb_client_context context, const char *path, uint8_t flags) {
@@ -36,15 +23,6 @@ void duckdb_file_seek(duckdb_file_handle handle, idx_t pos) {
 
 void duckdb_file_close(duckdb_file_handle handle) {
     delete (duckdb::FileHandle *) handle;
-}
-
-duckdb_logical_type duckdb_create_struct_type2(
-        idx_t n_pairs,
-        const char **names,
-        const duckdb_logical_type *types) {
-    auto *stype = new duckdb::LogicalType;
-    *stype = duckdb::LogicalType::STRUCT(getVector(n_pairs, names, types));
-    return reinterpret_cast<duckdb_logical_type>(stype);
 }
 
 string_piece duckdb_get_string(duckdb_unified_vector_format vector, idx_t index) {

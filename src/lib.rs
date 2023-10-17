@@ -2,7 +2,6 @@ mod duckdb;
 mod jfr_attach;
 mod jfr_scan;
 mod jfr_schema;
-mod stacktrace_matches;
 
 use crate::duckdb::Database;
 
@@ -36,7 +35,6 @@ unsafe fn init(db: duckdb_database) -> Result<()> {
     let conn = db.connect()?;
     conn.register_table_function(&jfr_scan::build_table_function_def()?)?;
     conn.register_table_function(&jfr_attach::build_table_function_def()?)?;
-    conn.register_scalar_function(&stacktrace_matches::stacktrace_matches_def()?)?;
     Ok(())
 }
 

@@ -7,7 +7,6 @@ pub mod file;
 pub mod function_info;
 pub mod init_info;
 pub mod logical_type;
-pub mod scalar_function;
 pub mod table_function;
 pub mod unified_vector;
 pub mod value;
@@ -16,9 +15,8 @@ pub mod view;
 
 use crate::duckdb::bindings::{
     duckdb_close, duckdb_connect, duckdb_connection, duckdb_database, duckdb_disconnect,
-    duckdb_open, duckdb_register_scalar_function, duckdb_register_table_function2, DuckDBSuccess,
+    duckdb_open, duckdb_register_table_function2, DuckDBSuccess,
 };
-use crate::duckdb::scalar_function::ScalarFunction;
 use crate::duckdb::table_function::TableFunction;
 use crate::Result;
 use anyhow::anyhow;
@@ -92,15 +90,6 @@ impl Connection {
             Ok(())
         } else {
             Err(anyhow!("Error registering table function"))
-        }
-    }
-
-    pub fn register_scalar_function(&self, f: &ScalarFunction) -> Result<()> {
-        let r = unsafe { duckdb_register_scalar_function(self.0, f.0) };
-        if r == DuckDBSuccess {
-            Ok(())
-        } else {
-            Err(anyhow!("Error registering scalar function"))
         }
     }
 }

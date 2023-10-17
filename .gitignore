@@ -8,4 +8,6 @@
 .duckdbrc
 .lldbinit
 
-/duckdb-downloaded-lib
+/duckdb-sources
+
+compile_commands.json

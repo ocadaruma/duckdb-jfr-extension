@@ -23,6 +23,10 @@ use jfrs::reader::{Chunk, ChunkReader, JfrReader};
 use std::ffi::CString;
 
 use anyhow::anyhow;
+use rustc_hash::FxHashMap;
+
+const STACK_TRACE_TYPE: &str = "jdk.types.StackTrace";
+const ROW_ID_COLUMN_ID: usize = usize::MAX;
 
 pub fn build_table_function_def() -> Result<TableFunction> {
     let table_function = TableFunction::new();
@@ -109,6 +113,9 @@ fn map_primitive_type(field: &JfrField) -> Option<LogicalType> {
         "short" => Some(LogicalType::new(LogicalTypeId::Smallint)),
         "byte" => Some(LogicalType::new(LogicalTypeId::Tinyint)),
         "java.lang.String" => Some(LogicalType::new(LogicalTypeId::Varchar)),
+        // For performance reasons, we store stacktrace as varchar of concatenated frames
+        // instead of parsing it into a list of stack frame struct.
+        STACK_TRACE_TYPE => Some(LogicalType::new(LogicalTypeId::Varchar)),
         _ => None,
     }
 }
@@ -180,6 +187,8 @@ unsafe fn scan(
     let mut children_idx = vec![0usize; bind_data.field_count];
     let mut vector_pool = vec![None; bind_data.field_count];
 
+    let mut stacktrace_cache = FxHashMap::<i64, (CString, usize)>::default();
+
     let current_chunk_idx = init_data.chunk_idx;
     let mut row = 0;
 
@@ -200,7 +209,63 @@ unsafe fn scan(
 
             for p in 0..init_data.projection.len() {
                 let i = init_data.projection[p];
+                if i == ROW_ID_COLUMN_ID {
+                    assign(
+                        duckdb_data_chunk_get_vector(output_raw, p as idx_t),
+                        row,
+                        42,
+                    );
+                    continue;
+                }
+
                 let field = &schema.children[i];
+
+                if field.name.as_str() == "stackTrace" {
+                    let constant_idx = *event
+                        .value()
+                        .get_field_raw("stackTrace")
+                        .and_then(|v| match v.value {
+                            ValueDescriptor::ConstantPool {
+                                class_id,
+                                constant_index,
+                            } => Some(constant_index),
+                            _ => None,
+                        })
+                        .unwrap();
+                    let stacktrace = stacktrace_cache.entry(constant_idx).or_insert_with(|| {
+                        let mut stacktrace = String::new();
+                        let frames = event
+                            .value()
+                            .get_field("stackTrace")
+                            .and_then(|v| v.get_field("frames"))
+                            .unwrap();
+                        for frame in frames.as_iter().unwrap() {
+                            let type_name = frame
+                                .get_field("method")
+                                .and_then(|v| v.get_field("type"))
+                                .and_then(|v| v.get_field("name"))
+                                .and_then(|v| v.get_field("string"))
+                                .and_then(|v| <&str>::try_from(v.value).ok())
+                                .unwrap();
+                            let method_name = frame
+                                .get_field("method")
+                                .and_then(|v| v.get_field("name"))
+                                .and_then(|v| v.get_field("string"))
+                                .and_then(|v| <&str>::try_from(v.value).ok())
+                                .unwrap();
+                            stacktrace.push_str(type_name);
+                            stacktrace.push('.');
+                            stacktrace.push_str(method_name);
+                            stacktrace.push('\n');
+                        }
+
+                        (CString::new(stacktrace.as_str()).unwrap(), stacktrace.len())
+                    });
+
+                    Vector::from_ptr(duckdb_data_chunk_get_vector(output_raw, p as idx_t))
+                        .assign_string_element_len(row, stacktrace.0.as_ptr(), stacktrace.1);
+                    continue;
+                }
 
                 if let Some(accessor) = event.value().get_field(field.name.as_str()) {
                     populate_column(
