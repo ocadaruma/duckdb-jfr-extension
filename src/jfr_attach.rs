@@ -1,7 +1,7 @@
 use crate::duckdb::bind_info::BindInfo;
 use crate::duckdb::bindings::{
-    duckdb_bind_info, duckdb_bind_set_error, duckdb_client_context, duckdb_data_chunk,
-    duckdb_function_info, duckdb_function_set_error, duckdb_init_info, LogicalTypeId,
+    duckdb_bind_info, duckdb_client_context, duckdb_data_chunk, duckdb_function_info,
+    duckdb_init_info, LogicalTypeId,
 };
 use crate::duckdb::file::FileHandle;
 use crate::duckdb::function_info::FunctionInfo;
@@ -13,7 +13,6 @@ use crate::Result;
 use anyhow::anyhow;
 use jfrs::reader::type_descriptor::TypeDescriptor;
 use jfrs::reader::JfrReader;
-use std::ffi::CString;
 
 pub fn build_table_function_def() -> Result<TableFunction> {
     let table_function = TableFunction::new();
@@ -26,10 +25,9 @@ pub fn build_table_function_def() -> Result<TableFunction> {
 }
 
 unsafe extern "C" fn jfr_attach_bind(context: duckdb_client_context, info: duckdb_bind_info) {
-    if let Err(err) = bind(context, info) {
-        if let Ok(cstr) = CString::new(err.to_string()) {
-            duckdb_bind_set_error(info, cstr.into_raw());
-        }
+    let info = BindInfo::from_ptr(info);
+    if let Err(err) = bind(context, &info) {
+        info.set_error(&err);
     }
 }
 
@@ -37,8 +35,7 @@ unsafe extern "C" fn jfr_attach_init(_info: duckdb_init_info) {
     // noop
 }
 
-unsafe fn bind(_context: duckdb_client_context, info: duckdb_bind_info) -> Result<()> {
-    let info = BindInfo::from_ptr(info);
+unsafe fn bind(_context: duckdb_client_context, info: &BindInfo) -> Result<()> {
     let filename = info.get_parameter(0).get_varchar().as_str()?.to_string();
 
     info.set_bind_data(Box::new(AttachBindData {
@@ -54,15 +51,13 @@ unsafe extern "C" fn jfr_attach_func(
     info: duckdb_function_info,
     _output_raw: duckdb_data_chunk,
 ) {
-    if let Err(err) = attach(context, info) {
-        if let Ok(cstr) = CString::new(err.to_string()) {
-            duckdb_function_set_error(info, cstr.into_raw());
-        }
+    let info = FunctionInfo::from_ptr(info);
+    if let Err(err) = attach(context, &info) {
+        info.set_error(&err);
     }
 }
 
-unsafe fn attach(context: duckdb_client_context, info: duckdb_function_info) -> Result<()> {
-    let info = FunctionInfo::from_ptr(info);
+unsafe fn attach(context: duckdb_client_context, info: &FunctionInfo) -> Result<()> {
     let mut bind_data = info
         .get_bind_data::<AttachBindData>()
         .ok_or(anyhow!("bind_data is null"))?;

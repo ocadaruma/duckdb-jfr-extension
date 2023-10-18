@@ -26,7 +26,7 @@ wasm-release: duckdb-sources submodules
 
 .PHONY: fmt
 fmt:
-	cargo fix
+	cargo fix --allow-dirty --allow-staged
 	cargo fmt
 	cargo clippy
 

@@ -40,6 +40,7 @@ impl Ownership {
 }
 
 impl Database {
+    #[cfg(test)]
     pub fn new_in_memory() -> Result<Self> {
         let mut db: duckdb_database = null_mut();
         let filename = CString::new(":memory:")?;
@@ -55,7 +56,6 @@ impl Database {
         Self(Ownership::Borrowed(ptr.cast()))
     }
 
-    /// Visible for testing
     pub(crate) fn ptr(&self) -> duckdb_database {
         self.0.ptr()
     }

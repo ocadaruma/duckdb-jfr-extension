@@ -1,11 +1,10 @@
 use crate::duckdb::bind_info::BindInfo;
 use crate::duckdb::bindings::{
-    duckdb_bind_info, duckdb_bind_set_error, duckdb_client_context, duckdb_data_chunk,
-    duckdb_data_chunk_get_vector, duckdb_function_info, duckdb_function_set_error,
-    duckdb_init_info, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_reserve,
-    duckdb_list_vector_set_size, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid,
-    duckdb_vector, duckdb_vector_ensure_validity_writable, duckdb_vector_get_validity,
-    duckdb_vector_size, idx_t, LogicalTypeId,
+    duckdb_bind_info, duckdb_client_context, duckdb_data_chunk, duckdb_data_chunk_get_vector,
+    duckdb_function_info, duckdb_init_info, duckdb_list_entry, duckdb_list_vector_get_child,
+    duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_struct_vector_get_child,
+    duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable,
+    duckdb_vector_get_validity, duckdb_vector_size, idx_t, LogicalTypeId,
 };
 use crate::duckdb::data_chunk::DataChunk;
 use crate::duckdb::file::FileHandle;
@@ -20,6 +19,7 @@ use jfrs::reader::event::Accessor;
 use jfrs::reader::type_descriptor::{TickUnit, Unit};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
 use jfrs::reader::{Chunk, ChunkReader, JfrReader};
+use std::collections::hash_map::Entry;
 use std::ffi::CString;
 
 use anyhow::anyhow;
@@ -41,16 +41,13 @@ pub fn build_table_function_def() -> Result<TableFunction> {
 }
 
 unsafe extern "C" fn jfr_scan_bind(context: duckdb_client_context, info: duckdb_bind_info) {
-    if let Err(err) = bind(context, info) {
-        if let Ok(cstr) = CString::new(err.to_string()) {
-            duckdb_bind_set_error(info, cstr.into_raw());
-        }
+    let info = BindInfo::from_ptr(info);
+    if let Err(err) = bind(context, &info) {
+        info.set_error(&err);
     }
 }
 
-unsafe fn bind(context: duckdb_client_context, info: duckdb_bind_info) -> Result<()> {
-    let info = BindInfo::from_ptr(info);
-
+unsafe fn bind(context: duckdb_client_context, info: &BindInfo) -> Result<()> {
     let filename = info.get_parameter(0).get_varchar().as_str()?.to_string();
     let table_name = info.get_parameter(1).get_varchar().as_str()?.to_string();
 
@@ -140,17 +137,17 @@ unsafe extern "C" fn jfr_scan_func(
     info: duckdb_function_info,
     output_raw: duckdb_data_chunk,
 ) {
-    if let Err(err) = scan(context, info, output_raw) {
-        duckdb_function_set_error(info, CString::new(err.to_string()).unwrap().into_raw());
+    let info = FunctionInfo::from_ptr(info);
+    if let Err(err) = scan(context, &info, output_raw) {
+        info.set_error(&err);
     }
 }
 
 unsafe fn scan(
     context: duckdb_client_context,
-    info: duckdb_function_info,
+    info: &FunctionInfo,
     output_raw: duckdb_data_chunk,
 ) -> Result<()> {
-    let info = FunctionInfo::from_ptr(info);
     let output = DataChunk::from_ptr(output_raw);
     let mut init_data = info
         .get_init_data::<ScanInitData>()
@@ -184,10 +181,7 @@ unsafe fn scan(
     }
 
     let vector_size = duckdb_vector_size() as usize;
-    let mut children_idx = vec![0usize; bind_data.field_count];
-    let mut vector_pool = vec![None; bind_data.field_count];
-
-    let mut stacktrace_cache = FxHashMap::<i64, (CString, usize)>::default();
+    let mut pool = Pool::new(bind_data.field_count);
 
     let current_chunk_idx = init_data.chunk_idx;
     let mut row = 0;
@@ -219,72 +213,23 @@ unsafe fn scan(
                 }
 
                 let field = &schema.children[i];
-
-                if field.name.as_str() == "stackTrace" {
-                    let constant_idx = *event
-                        .value()
-                        .get_field_raw("stackTrace")
-                        .and_then(|v| match v.value {
-                            ValueDescriptor::ConstantPool {
-                                class_id,
-                                constant_index,
-                            } => Some(constant_index),
-                            _ => None,
-                        })
-                        .unwrap();
-                    let stacktrace = stacktrace_cache.entry(constant_idx).or_insert_with(|| {
-                        let mut stacktrace = String::new();
-                        let frames = event
-                            .value()
-                            .get_field("stackTrace")
-                            .and_then(|v| v.get_field("frames"))
-                            .unwrap();
-                        for frame in frames.as_iter().unwrap() {
-                            let type_name = frame
-                                .get_field("method")
-                                .and_then(|v| v.get_field("type"))
-                                .and_then(|v| v.get_field("name"))
-                                .and_then(|v| v.get_field("string"))
-                                .and_then(|v| <&str>::try_from(v.value).ok())
-                                .unwrap();
-                            let method_name = frame
-                                .get_field("method")
-                                .and_then(|v| v.get_field("name"))
-                                .and_then(|v| v.get_field("string"))
-                                .and_then(|v| <&str>::try_from(v.value).ok())
-                                .unwrap();
-                            stacktrace.push_str(type_name);
-                            stacktrace.push('.');
-                            stacktrace.push_str(method_name);
-                            stacktrace.push('\n');
-                        }
-
-                        (CString::new(stacktrace.as_str()).unwrap(), stacktrace.len())
-                    });
-
-                    Vector::from_ptr(duckdb_data_chunk_get_vector(output_raw, p as idx_t))
-                        .assign_string_element_len(row, stacktrace.0.as_ptr(), stacktrace.1);
-                    continue;
-                }
-
-                if let Some(accessor) = event.value().get_field(field.name.as_str()) {
+                if let Some(accessor) = event.value().get_field_raw(field.name.as_str()) {
                     populate_column(
                         row,
                         duckdb_data_chunk_get_vector(output_raw, p as idx_t),
                         &output,
                         &chunk,
+                        chunk_idx as usize,
                         field,
                         accessor,
-                        &mut children_idx,
-                        &mut vector_pool,
-                    );
+                        &mut pool,
+                    )?;
                 } else {
                     set_null(
                         duckdb_data_chunk_get_vector(output_raw, p as idx_t),
                         row,
                         field,
-                        &mut vector_pool,
-                        &mut children_idx,
+                        &mut pool,
                     );
                 }
             }
@@ -299,13 +244,7 @@ unsafe fn scan(
     Ok(())
 }
 
-unsafe fn set_null(
-    vector: duckdb_vector,
-    row_idx: usize,
-    field: &JfrField,
-    vector_pool: &mut Vec<Option<duckdb_vector>>,
-    children_idx: &mut Vec<usize>,
-) {
+unsafe fn set_null(vector: duckdb_vector, row_idx: usize, field: &JfrField, pool: &mut Pool) {
     duckdb_vector_ensure_validity_writable(vector);
     duckdb_validity_set_row_invalid(duckdb_vector_get_validity(vector), row_idx as u64);
 
@@ -315,11 +254,8 @@ unsafe fn set_null(
     // refs: https://arrow.apache.org/docs/12.0/format/Columnar.html#struct-validity
     if !field.children.is_empty() && !field.is_array {
         for (i, s) in field.children.iter().filter(|s| s.valid).enumerate() {
-            if vector_pool[s.idx].is_none() {
-                vector_pool[s.idx] = Some(duckdb_struct_vector_get_child(vector, i as idx_t));
-            }
-            let child_vector = vector_pool[s.idx].unwrap();
-            set_null(child_vector, row_idx, s, vector_pool, children_idx);
+            let child_vector = pool.get_struct_child_vector(s.idx, vector, i as idx_t);
+            set_null(child_vector, row_idx, s, pool);
         }
     }
 }
@@ -329,16 +265,43 @@ unsafe fn populate_column(
     vector: duckdb_vector,
     output: &DataChunk,
     chunk: &Chunk,
-    child: &JfrField,
+    chunk_idx: usize,
+    field: &JfrField,
     accessor: Accessor<'_>,
-    children_idx: &mut Vec<usize>,
-    vector_pool: &mut Vec<Option<duckdb_vector>>,
-) {
+    pool: &mut Pool,
+) -> Result<()> {
+    // special handling for stack trace to parse it as a string
+    // rather than a list of stack frame struct for performance reason
+    if field.type_name == STACK_TRACE_TYPE {
+        match accessor.value {
+            ValueDescriptor::ConstantPool {
+                class_id: _,
+                constant_index,
+            } => {
+                let (stacktrace, len) =
+                    pool.get_stacktrace(chunk_idx, *constant_index, &accessor)?;
+                Vector::from_ptr(vector).assign_string_element_len(
+                    row_idx,
+                    stacktrace.as_ptr(),
+                    *len,
+                );
+            }
+            _ => {
+                let (stacktrace, len) = Pool::parse_stacktrace(&accessor)?;
+                Vector::from_ptr(vector).assign_string_element_len(
+                    row_idx,
+                    stacktrace.as_ptr(),
+                    len,
+                );
+            }
+        }
+        return Ok(());
+    }
     match accessor.resolve().map(|a| a.value) {
         Some(ValueDescriptor::Primitive(p)) => match p {
             Primitive::Integer(v) => assign(vector, row_idx, *v),
             Primitive::Long(v) => {
-                let v = match (child.tick_unit, child.unit) {
+                let v = match (field.tick_unit, field.unit) {
                     (Some(TickUnit::Timestamp), _) => {
                         let ticks_per_nanos =
                             (chunk.header.ticks_per_second as f64) / 1_000_000_000.0;
@@ -365,7 +328,7 @@ unsafe fn populate_column(
             Primitive::Boolean(v) => assign(vector, row_idx, *v),
             Primitive::Short(v) => assign(vector, row_idx, *v),
             Primitive::Byte(v) => assign(vector, row_idx, *v),
-            Primitive::NullString => set_null(vector, row_idx, child, vector_pool, children_idx),
+            Primitive::NullString => set_null(vector, row_idx, field, pool),
             Primitive::String(s) => {
                 Vector::from_ptr(vector).assign_string_element_len(
                     row_idx,
@@ -375,7 +338,7 @@ unsafe fn populate_column(
             }
         },
         Some(ValueDescriptor::Object(obj)) => {
-            for (ii, (i, s)) in child
+            for (ii, (i, s)) in field
                 .children
                 .iter()
                 .enumerate()
@@ -383,25 +346,22 @@ unsafe fn populate_column(
                 .filter(|(_, s)| s.valid)
                 .enumerate()
             {
-                if vector_pool[s.idx].is_none() {
-                    vector_pool[s.idx] = Some(duckdb_struct_vector_get_child(vector, ii as u64));
-                }
-                let child_vector = vector_pool[s.idx].unwrap();
+                let child_vector = pool.get_struct_child_vector(s.idx, vector, ii as idx_t);
                 populate_column(
                     row_idx,
                     child_vector,
                     output,
                     chunk,
+                    chunk_idx,
                     s,
                     Accessor::new(chunk, &obj.fields[i]),
-                    children_idx,
-                    vector_pool,
-                );
+                    pool,
+                )?;
             }
         }
         Some(ValueDescriptor::Array(arr)) => {
             let child_vector = duckdb_list_vector_get_child(vector);
-            let child_offset = children_idx[child.idx];
+            let child_offset = pool.get_list_child_row_idx(field.idx);
             duckdb_list_vector_reserve(vector, (child_offset + arr.len()) as u64);
             for (i, v) in arr.iter().enumerate() {
                 populate_column(
@@ -409,11 +369,11 @@ unsafe fn populate_column(
                     child_vector,
                     output,
                     chunk,
-                    child,
+                    chunk_idx,
+                    field,
                     Accessor::new(chunk, v),
-                    children_idx,
-                    vector_pool,
-                );
+                    pool,
+                )?;
             }
             Vector::from_ptr(vector)
                 .get_data::<duckdb_list_entry>()
@@ -422,13 +382,14 @@ unsafe fn populate_column(
                     length: arr.len() as u64,
                     offset: child_offset as u64,
                 });
-            children_idx[child.idx] = child_offset + arr.len();
+            pool.set_list_child_row_idx(field.idx, child_offset + arr.len());
             duckdb_list_vector_set_size(vector, (child_offset + arr.len()) as u64);
         }
         _ => {
-            set_null(vector, row_idx, child, vector_pool, children_idx);
+            set_null(vector, row_idx, field, pool);
         }
     }
+    Ok(())
 }
 
 unsafe fn assign<T>(vector: duckdb_vector, row_idx: usize, value: T) {
@@ -451,13 +412,116 @@ struct ScanBindData {
     field_count: usize,
 }
 
+struct Pool {
+    vectors: Vec<Option<duckdb_vector>>,
+    list_children_idx: Vec<usize>,
+    stacktrace_cache: FxHashMap<(usize, i64), (CString, usize)>,
+}
+
+impl Pool {
+    fn new(field_count: usize) -> Self {
+        Self {
+            vectors: vec![None; field_count],
+            list_children_idx: vec![0; field_count],
+            stacktrace_cache: FxHashMap::default(),
+        }
+    }
+
+    fn get_struct_child_vector(
+        &mut self,
+        field_idx: usize,
+        parent: duckdb_vector,
+        child_idx: idx_t,
+    ) -> duckdb_vector {
+        if self.vectors[field_idx].is_none() {
+            self.vectors[field_idx] =
+                Some(unsafe { duckdb_struct_vector_get_child(parent, child_idx) });
+        }
+        self.vectors[field_idx].unwrap()
+    }
+
+    fn get_list_child_row_idx(&self, field_idx: usize) -> usize {
+        self.list_children_idx[field_idx]
+    }
+
+    fn set_list_child_row_idx(&mut self, field_idx: usize, row_idx: usize) {
+        self.list_children_idx[field_idx] = row_idx;
+    }
+
+    fn get_stacktrace(
+        &mut self,
+        chunk_idx: usize,
+        constant_idx: i64,
+        accessor: &Accessor<'_>,
+    ) -> Result<&(CString, usize)> {
+        match self.stacktrace_cache.entry((chunk_idx, constant_idx)) {
+            Entry::Occupied(o) => Ok(o.into_mut()),
+            Entry::Vacant(v) => Ok(v.insert(Self::parse_stacktrace(accessor)?)),
+        }
+    }
+
+    fn parse_stacktrace(accessor: &Accessor<'_>) -> Result<(CString, usize)> {
+        let mut frames = vec![];
+        for frame in accessor
+            .get_field("frames")
+            .and_then(|f| f.as_iter())
+            .ok_or_else(|| anyhow!("failed to get frames"))?
+        {
+            let type_name = frame
+                .get_field("method")
+                .and_then(|m| m.get_field("type"))
+                .and_then(|t| t.get_field("name"))
+                .and_then(|n| n.get_field("string"))
+                .and_then(|s| <&str>::try_from(s.value).ok())
+                .ok_or_else(|| anyhow!("failed to get type name"))?
+                .to_string();
+            let method_name = frame
+                .get_field("method")
+                .and_then(|t| t.get_field("name"))
+                .and_then(|n| n.get_field("string"))
+                .and_then(|s| <&str>::try_from(s.value).ok())
+                .ok_or_else(|| anyhow!("failed to get method name"))?
+                .to_string();
+            let frame_type = frame
+                .get_field("type")
+                .and_then(|t| t.get_field("description"))
+                .and_then(|s| <&str>::try_from(s.value).ok())
+                .map(|s| s.to_string())
+                .ok_or_else(|| anyhow!("failed to get frame type"))?;
+            let line_number = frame
+                .get_field("lineNumber")
+                .and_then(|l| <i32>::try_from(l.value).ok())
+                .ok_or_else(|| anyhow!("failed to get line number"))?;
+            let frame_string = match frame_type.as_str() {
+                "Interpreted" | "JIT compiled" | "Inlined" | "C1 compiled"
+                    if !type_name.is_empty() =>
+                {
+                    let line_num = if line_number > 0 {
+                        format!(":{}", line_number)
+                    } else {
+                        "".to_string()
+                    };
+                    format!("{}.{}{}", type_name, method_name, line_num)
+                }
+                _ => method_name,
+            };
+            frames.push(frame_string);
+        }
+        let result = frames.join("\n");
+        let len = result.len();
+        Ok((CString::new(result)?, len))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::duckdb::Database;
-    use crate::jfr_scan::build_table_function_def;
+    use crate::jfr_scan::{build_table_function_def, Pool};
     use crate::Result;
     use duckdb::types::FromSql;
     use duckdb::Connection;
+    use jfrs::reader::JfrReader;
+    use std::fs::File;
     use std::path::PathBuf;
 
     #[test]
@@ -490,6 +554,39 @@ mod tests {
         )
         .unwrap();
         assert_eq!(8888, result);
+    }
+
+    #[test]
+    fn test_parse_stacktrace() {
+        let mut reader = JfrReader::new(
+            File::open(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/async-profiler-wall.jfr"),
+            )
+            .unwrap(),
+        );
+        let (mut reader, chunk) = reader.chunks().next().unwrap().unwrap();
+        let event = reader
+            .events(&chunk)
+            .flatten()
+            .filter(|e| e.class.name() == "jdk.ExecutionSample")
+            .next()
+            .unwrap();
+        let (cstr, len) =
+            Pool::parse_stacktrace(&event.value().get_field("stackTrace").unwrap()).unwrap();
+        let expected = "/usr/lib/aarch64-linux-gnu/libc.so.6
+pthread_cond_timedwait
+os::PlatformMonitor::wait
+Monitor::wait
+CompileQueue::get
+CompileBroker::compiler_thread_loop
+JavaThread::thread_main_inner
+Thread::call_run
+thread_native_entry
+/usr/lib/aarch64-linux-gnu/libc.so.6
+/usr/lib/aarch64-linux-gnu/libc.so.6";
+
+        assert_eq!(expected.len(), len);
+        assert_eq!(expected, cstr.to_str().unwrap());
     }
 
     fn query_single<T: FromSql>(sql: &str, column_idx: usize) -> Result<T> {

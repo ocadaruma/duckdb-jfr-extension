@@ -7,26 +7,24 @@ use crate::duckdb::Database;
 
 use crate::duckdb::bindings::{duckdb_database, duckdb_library_version};
 
+use log::error;
 use std::ffi::c_char;
 
 type Result<T> = anyhow::Result<T>;
 
 // TODO:
-// - error handling
 // - interval support
-// - projection pushdown
 // - cleanup comments
-// - null handling in stacktrace_matches
 // - add tests
-// - stacktrace_matches: unify match target with jfr-analytics
 // - wrap all raw C API calls (to prevent memory leaks / unsafes)
-// - performance optimization by dictionary vectors
 
 #[no_mangle]
 pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: duckdb_database) {
+    env_logger::init();
+
     let res = init(db);
     if let Err(err) = res {
-        println!("Error: {}", err);
+        error!("init error: {:?}", err);
     }
 }
 

@@ -8,17 +8,19 @@ default = ["build-duckdb"]
 build-duckdb = []
 
 [dependencies]
-jfrs = { version = "=0.2.4", features = ["cstring"] }
+jfrs = { version = "=0.2.5", features = ["cstring"] }
 rustc-hash = "=1.1.0"
 anyhow = { version = "=1.0.72", features = ["backtrace"] }
 regex = "=1.9.4"
+log = "=0.4.20"
+env_logger = "=0.10.0"
 
 [build-dependencies]
 build_script = "=0.2.0"
 cc = { version = "=1.0.83", features = ["parallel"] }
 bindgen = "=0.66.1"
 serde = { version = "=1.0.189", features = ["derive"] }
-serde_json = { version = "=1.0.189" }
+serde_json = { version = "=1.0.107" }
 
 [dev-dependencies]
 duckdb = { version = "=0.9.1", features = ["bundled"] }
