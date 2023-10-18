@@ -19,6 +19,7 @@ type Result<T> = anyhow::Result<T>;
 // - wrap all raw C API calls (to prevent memory leaks / unsafes)
 
 #[no_mangle]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: duckdb_database) {
     env_logger::init();
 

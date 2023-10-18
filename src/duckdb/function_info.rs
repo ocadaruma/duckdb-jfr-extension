@@ -1,6 +1,6 @@
 use crate::duckdb::bindings::{
-    duckdb_bind_set_error, duckdb_function2_get_bind_data, duckdb_function2_get_init_data,
-    duckdb_function_info, duckdb_function_set_error,
+    duckdb_function2_get_bind_data, duckdb_function2_get_init_data, duckdb_function_info,
+    duckdb_function_set_error,
 };
 use log::error;
 use std::ffi::CString;

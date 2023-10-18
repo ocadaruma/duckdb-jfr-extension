@@ -8,7 +8,6 @@ pub mod function_info;
 pub mod init_info;
 pub mod logical_type;
 pub mod table_function;
-pub mod unified_vector;
 pub mod value;
 pub mod vector;
 pub mod view;
@@ -40,7 +39,6 @@ impl Ownership {
 }
 
 impl Database {
-    #[cfg(test)]
     pub fn new_in_memory() -> Result<Self> {
         let mut db: duckdb_database = null_mut();
         let filename = CString::new(":memory:")?;

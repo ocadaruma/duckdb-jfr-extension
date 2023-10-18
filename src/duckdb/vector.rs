@@ -1,10 +1,8 @@
 use crate::duckdb::bindings::{
-    duckdb_list_vector_get_child, duckdb_struct_vector_get_child, duckdb_to_unified_format,
-    duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_assign_string_element_len,
-    duckdb_vector_ensure_validity_writable, duckdb_vector_get_data, duckdb_vector_get_validity,
-    duckdb_vector_is_constant, idx_t,
+    duckdb_list_vector_get_child, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid,
+    duckdb_vector, duckdb_vector_assign_string_element_len, duckdb_vector_ensure_validity_writable,
+    duckdb_vector_get_data, duckdb_vector_get_validity, duckdb_vector_is_constant, idx_t,
 };
-use crate::duckdb::unified_vector::UnifiedVector;
 use std::ffi::c_char;
 
 pub struct Vector(duckdb_vector);
@@ -12,10 +10,6 @@ pub struct Vector(duckdb_vector);
 impl Vector {
     pub fn from_ptr(ptr: duckdb_vector) -> Self {
         Self(ptr)
-    }
-
-    pub fn to_unified_format(&self, count: idx_t) -> UnifiedVector {
-        UnifiedVector(unsafe { duckdb_to_unified_format(self.0, count) })
     }
 
     pub fn get_struct_child(&self, index: idx_t) -> Self {

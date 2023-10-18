@@ -1,7 +1,6 @@
 use build_script::cargo_rerun_if_changed;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::env;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 
 fn main() {
@@ -36,10 +35,59 @@ fn main() {
     include_dirs.insert(duckdb_include.clone());
 
     let bridge_sources = ["src/bridge.cpp", "src/bridge_table_function.cpp"];
-    cpp_files.extend(bridge_sources.iter().map(|f| PathBuf::from(f)));
+    cpp_files.extend(bridge_sources.iter().map(PathBuf::from));
 
     #[cfg(feature = "build-duckdb")]
-    {
+    build_duckdb::configure(&duckdb_sources, &mut cpp_files, &mut include_dirs);
+
+    cargo_rerun_if_changed(&duckdb_include);
+    cargo_rerun_if_changed(bridge_header);
+    for source in bridge_sources {
+        cargo_rerun_if_changed(source);
+    }
+
+    // We use same flags as in libduckdb-sys basically
+    cc::Build::new()
+        .includes(include_dirs)
+        .files(cpp_files)
+        .flag_if_supported("-std=c++11")
+        .flag_if_supported("-stdlib=libc++")
+        // .flag_if_supported("-stdlib=libstdc++") // Except this. If we specify this, em++ spits an error
+        .flag_if_supported("/bigobj")
+        .flag_if_supported("-w")
+        // https://discord.com/channels/909674491309850675/921100573732909107/1110164344525832192
+        .define("NDEBUG", None)
+        .warnings(false)
+        .cpp(true)
+        .compile("duckdb-cc");
+}
+
+#[cfg(feature = "build-duckdb")]
+mod build_duckdb {
+    use build_script::cargo_rerun_if_changed;
+    use std::collections::{HashMap, HashSet};
+    use std::fs::File;
+    use std::path::PathBuf;
+
+    #[derive(serde::Deserialize)]
+    struct Sources {
+        cpp_files: HashSet<String>,
+        include_dirs: HashSet<String>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Manifest {
+        base: Sources,
+
+        #[allow(unused)]
+        extensions: HashMap<String, Sources>,
+    }
+
+    pub fn configure(
+        duckdb_sources: &PathBuf,
+        cpp_files: &mut HashSet<PathBuf>,
+        include_dirs: &mut HashSet<PathBuf>,
+    ) {
         let manifest_file =
             File::open(duckdb_sources.join("duckdb/manifest.json")).expect("manifest file");
         let manifest: Manifest =
@@ -62,39 +110,4 @@ fn main() {
 
         cargo_rerun_if_changed(duckdb_sources);
     }
-
-    cargo_rerun_if_changed(&duckdb_include);
-    cargo_rerun_if_changed(&bridge_header);
-    for source in bridge_sources {
-        cargo_rerun_if_changed(source);
-    }
-
-    // We use same flags as in libduckdb-sys basically
-    cc::Build::new()
-        .includes(include_dirs)
-        .files(cpp_files)
-        .flag_if_supported("-std=c++11")
-        .flag_if_supported("-stdlib=libc++")
-        // .flag_if_supported("-stdlib=libstdc++") // Except this. If we specify this, em++ spits an error
-        .flag_if_supported("/bigobj")
-        .flag_if_supported("-w")
-        // https://discord.com/channels/909674491309850675/921100573732909107/1110164344525832192
-        .define("NDEBUG", None)
-        .warnings(false)
-        .cpp(true)
-        .compile("duckdb-cc");
-}
-
-#[derive(serde::Deserialize)]
-struct Sources {
-    cpp_files: HashSet<String>,
-    include_dirs: HashSet<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct Manifest {
-    base: Sources,
-
-    #[allow(unused)]
-    extensions: HashMap<String, Sources>,
 }
