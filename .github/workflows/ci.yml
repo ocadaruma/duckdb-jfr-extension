@@ -26,17 +26,26 @@ jobs:
       - name: Setup duckdb sources
         run: |
           make duckdb-sources
-      - name: Set up Rust
+      - name: Set up Rust for macos
+        if: startsWith(matrix.os, 'macos')
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: aarch64-apple-darwin
+      - name: Set up Rust for linux
+        if: !startsWith(matrix.os, 'macos')
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build extension
+        run: |
+          make loadable-extension
       - name: Test Rust
         run: |
           cargo test
       - name: Test Java
         run: |
-          jdbc/gradlew test
+          cd jdbc && ./gradlew test
       - name: Save extension output
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v2
