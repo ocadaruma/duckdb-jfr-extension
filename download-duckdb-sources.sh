@@ -22,10 +22,10 @@ if [ -f ./duckdb/manifest.json ]; then
   exit 0
 fi
 
-curl -L $download_url | tar xf - "${libduckdb_sys_path}/${source_filename}"
+curl -L $download_url | tar zxf - "${libduckdb_sys_path}/${source_filename}"
 mv "${libduckdb_sys_path}/${source_filename}" .
 
-tar xf "${source_filename}"
+tar zxf "${source_filename}"
 
 # cleanup
 rm -rf "duckdb-rs-${DUCKDB_RS_VERSION}" "${source_filename}"
