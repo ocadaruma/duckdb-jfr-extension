@@ -24,12 +24,12 @@ case $(uname -s) in
       x86_64)
         out_dir="$BUILD_DIR/linux-amd64"
         mkdir -p $out_dir
-        target="x86_64-unknown-linux-musl"
+        target="x86_64-unknown-linux-gnu"
         ;;
       aarch64)
         out_dir="$BUILD_DIR/linux-arm64"
         mkdir -p $out_dir
-        target="aarch64-unknown-linux-musl"
+        target="aarch64-unknown-linux-gnu"
         ;;
       *)
         echo "Unsupported architecture: $(uname -m)" >&2
