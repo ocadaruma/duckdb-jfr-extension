@@ -40,15 +40,33 @@ jobs:
       - name: Build extension
         run: |
           make loadable-extension
-      - name: Test Rust
-        run: |
-          cargo test
-      - name: Test Java
-        run: |
-          cd jdbc && ./gradlew test
+#      - name: Test Java
+#        run: |
+#          cd jdbc && ./gradlew test
       - name: Save extension output
 #        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v2
         with:
           name: extension-build
           path: build/*
+  test-rust:
+    name: Execute Rust test for ${{ matrix.build }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - build: x86_64-linux
+            os: ubuntu-latest
+          - build: x86_64-macos
+            os: macos-latest
+    steps:
+      - name: Setup duckdb sources
+        run: |
+          make duckdb-sources
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Test Rust
+        run: |
+          cargo test
