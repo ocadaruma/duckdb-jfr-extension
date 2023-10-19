@@ -26,9 +26,6 @@ serde_json = { version = "=1.0.107" }
 [dev-dependencies]
 duckdb = { version = "=0.9.1", features = ["bundled"] }
 
-[profile.release]
-debug = true
-
 [lib]
 name = "duckdb_jfr_extension"
 crate-type = ["cdylib"]
