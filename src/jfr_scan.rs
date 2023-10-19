@@ -1,10 +1,7 @@
 use crate::duckdb::bind_info::BindInfo;
 use crate::duckdb::bindings::{
-    duckdb_bind_info, duckdb_client_context, duckdb_data_chunk, duckdb_data_chunk_get_vector,
-    duckdb_function_info, duckdb_init_info, duckdb_list_entry, duckdb_list_vector_get_child,
-    duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_struct_vector_get_child,
-    duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable,
-    duckdb_vector_get_validity, duckdb_vector_size, idx_t, LogicalTypeId,
+    duckdb_bind_info, duckdb_client_context, duckdb_data_chunk, duckdb_function_info,
+    duckdb_init_info, duckdb_list_entry, duckdb_vector, LogicalTypeId,
 };
 use crate::duckdb::data_chunk::DataChunk;
 use crate::duckdb::file::FileHandle;
@@ -180,7 +177,7 @@ unsafe fn scan(
         init_data.chunk_idx = 0;
     }
 
-    let vector_size = duckdb_vector_size() as usize;
+    let vector_size = DataChunk::vector_size();
     let mut pool = Pool::new(bind_data.field_count);
 
     let current_chunk_idx = init_data.chunk_idx;
@@ -204,11 +201,7 @@ unsafe fn scan(
             for p in 0..init_data.projection.len() {
                 let i = init_data.projection[p];
                 if i == ROW_ID_COLUMN_ID {
-                    assign(
-                        duckdb_data_chunk_get_vector(output_raw, p as idx_t),
-                        row,
-                        42,
-                    );
+                    output.get_vector(p).set_data(row, 42i64);
                     continue;
                 }
 
@@ -216,8 +209,7 @@ unsafe fn scan(
                 if let Some(accessor) = event.value().get_field_raw(field.name.as_str()) {
                     populate_column(
                         row,
-                        duckdb_data_chunk_get_vector(output_raw, p as idx_t),
-                        &output,
+                        &output.get_vector(p),
                         &chunk,
                         chunk_idx as usize,
                         field,
@@ -225,12 +217,7 @@ unsafe fn scan(
                         &mut pool,
                     )?;
                 } else {
-                    set_null(
-                        duckdb_data_chunk_get_vector(output_raw, p as idx_t),
-                        row,
-                        field,
-                        &mut pool,
-                    );
+                    set_null(&output.get_vector(p), row, field, &mut pool);
                 }
             }
             row += 1;
@@ -244,9 +231,8 @@ unsafe fn scan(
     Ok(())
 }
 
-unsafe fn set_null(vector: duckdb_vector, row_idx: usize, field: &JfrField, pool: &mut Pool) {
-    duckdb_vector_ensure_validity_writable(vector);
-    duckdb_validity_set_row_invalid(duckdb_vector_get_validity(vector), row_idx as u64);
+fn set_null(vector: &Vector, row_idx: usize, field: &JfrField, pool: &mut Pool) {
+    vector.set_null(row_idx);
 
     // Struct children have their own validity bitmaps.
     // Hence we also need to set validity mask for them.
@@ -254,16 +240,14 @@ unsafe fn set_null(vector: duckdb_vector, row_idx: usize, field: &JfrField, pool
     // refs: https://arrow.apache.org/docs/12.0/format/Columnar.html#struct-validity
     if !field.children.is_empty() && !field.is_array {
         for (i, s) in field.children.iter().filter(|s| s.valid).enumerate() {
-            let child_vector = pool.get_struct_child_vector(s.idx, vector, i as idx_t);
-            set_null(child_vector, row_idx, s, pool);
+            set_null(&vector.get_struct_child(i), row_idx, s, pool);
         }
     }
 }
 
-unsafe fn populate_column(
+fn populate_column(
     row_idx: usize,
-    vector: duckdb_vector,
-    output: &DataChunk,
+    vector: &Vector,
     chunk: &Chunk,
     chunk_idx: usize,
     field: &JfrField,
@@ -280,26 +264,20 @@ unsafe fn populate_column(
             } => {
                 let (stacktrace, len) =
                     pool.get_stacktrace(chunk_idx, *constant_index, &accessor)?;
-                Vector::from_ptr(vector).assign_string_element_len(
-                    row_idx,
-                    stacktrace.as_ptr(),
-                    *len,
-                );
+                vector.assign_string_element_len(row_idx, stacktrace.as_ptr(), *len);
             }
+            // Even when the stack trace is not in constant pool (which is unexpected),
+            // we still set data without caching it.
             _ => {
                 let (stacktrace, len) = Pool::parse_stacktrace(&accessor)?;
-                Vector::from_ptr(vector).assign_string_element_len(
-                    row_idx,
-                    stacktrace.as_ptr(),
-                    len,
-                );
+                vector.assign_string_element_len(row_idx, stacktrace.as_ptr(), len);
             }
         }
         return Ok(());
     }
     match accessor.resolve().map(|a| a.value) {
         Some(ValueDescriptor::Primitive(p)) => match p {
-            Primitive::Integer(v) => assign(vector, row_idx, *v),
+            Primitive::Integer(v) => vector.set_data(row_idx, *v),
             Primitive::Long(v) => {
                 let v = match (field.tick_unit, field.unit) {
                     (Some(TickUnit::Timestamp), _) => {
@@ -314,27 +292,19 @@ unsafe fn populate_column(
                     (_, Some(Unit::EpochSecond)) => *v * 1_000_000,
                     _ => *v,
                 };
-                assign(vector, row_idx, v)
+                vector.set_data(row_idx, v)
             }
-            Primitive::Float(v) => assign(vector, row_idx, *v),
-            Primitive::Double(v) => assign(vector, row_idx, *v),
+            Primitive::Float(v) => vector.set_data(row_idx, *v),
+            Primitive::Double(v) => vector.set_data(row_idx, *v),
             Primitive::Character(v) => {
-                Vector::from_ptr(vector).assign_string_element_len(
-                    row_idx,
-                    v.string.as_ptr(),
-                    v.len,
-                );
+                vector.assign_string_element_len(row_idx, v.string.as_ptr(), v.len);
             }
-            Primitive::Boolean(v) => assign(vector, row_idx, *v),
-            Primitive::Short(v) => assign(vector, row_idx, *v),
-            Primitive::Byte(v) => assign(vector, row_idx, *v),
+            Primitive::Boolean(v) => vector.set_data(row_idx, *v),
+            Primitive::Short(v) => vector.set_data(row_idx, *v),
+            Primitive::Byte(v) => vector.set_data(row_idx, *v),
             Primitive::NullString => set_null(vector, row_idx, field, pool),
             Primitive::String(s) => {
-                Vector::from_ptr(vector).assign_string_element_len(
-                    row_idx,
-                    s.string.as_ptr(),
-                    s.len,
-                );
+                vector.assign_string_element_len(row_idx, s.string.as_ptr(), s.len);
             }
         },
         Some(ValueDescriptor::Object(obj)) => {
@@ -346,11 +316,9 @@ unsafe fn populate_column(
                 .filter(|(_, s)| s.valid)
                 .enumerate()
             {
-                let child_vector = pool.get_struct_child_vector(s.idx, vector, ii as idx_t);
                 populate_column(
                     row_idx,
-                    child_vector,
-                    output,
+                    &vector.get_struct_child(ii),
                     chunk,
                     chunk_idx,
                     s,
@@ -360,14 +328,13 @@ unsafe fn populate_column(
             }
         }
         Some(ValueDescriptor::Array(arr)) => {
-            let child_vector = duckdb_list_vector_get_child(vector);
+            let child_vector = vector.get_list_child();
             let child_offset = pool.get_list_child_row_idx(field.idx);
-            duckdb_list_vector_reserve(vector, (child_offset + arr.len()) as u64);
+            vector.reserve_list_capacity(child_offset + arr.len());
             for (i, v) in arr.iter().enumerate() {
                 populate_column(
                     child_offset + i,
-                    child_vector,
-                    output,
+                    &child_vector,
                     chunk,
                     chunk_idx,
                     field,
@@ -375,15 +342,15 @@ unsafe fn populate_column(
                     pool,
                 )?;
             }
-            Vector::from_ptr(vector)
-                .get_data::<duckdb_list_entry>()
-                .add(row_idx)
-                .write(duckdb_list_entry {
+            vector.set_data(
+                row_idx,
+                duckdb_list_entry {
                     length: arr.len() as u64,
                     offset: child_offset as u64,
-                });
+                },
+            );
             pool.set_list_child_row_idx(field.idx, child_offset + arr.len());
-            duckdb_list_vector_set_size(vector, (child_offset + arr.len()) as u64);
+            vector.set_list_size(child_offset + arr.len());
         }
         _ => {
             set_null(vector, row_idx, field, pool);
@@ -413,7 +380,6 @@ struct ScanBindData {
 }
 
 struct Pool {
-    vectors: Vec<Option<duckdb_vector>>,
     list_children_idx: Vec<usize>,
     stacktrace_cache: FxHashMap<(usize, i64), (CString, usize)>,
 }
@@ -421,23 +387,9 @@ struct Pool {
 impl Pool {
     fn new(field_count: usize) -> Self {
         Self {
-            vectors: vec![None; field_count],
             list_children_idx: vec![0; field_count],
             stacktrace_cache: FxHashMap::default(),
         }
-    }
-
-    fn get_struct_child_vector(
-        &mut self,
-        field_idx: usize,
-        parent: duckdb_vector,
-        child_idx: idx_t,
-    ) -> duckdb_vector {
-        if self.vectors[field_idx].is_none() {
-            self.vectors[field_idx] =
-                Some(unsafe { duckdb_struct_vector_get_child(parent, child_idx) });
-        }
-        self.vectors[field_idx].unwrap()
     }
 
     fn get_list_child_row_idx(&self, field_idx: usize) -> usize {
@@ -531,6 +483,22 @@ mod tests {
         let result = query_single(
             format!(
                 "select count(*) from jfr_scan('{}', 'jdk.ExecutionSample')",
+                jfr.to_str().unwrap()
+            )
+            .as_str(),
+            0,
+        )
+        .unwrap();
+        assert_eq!(428, result);
+    }
+
+    #[test]
+    fn test_all_field() {
+        let jfr =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/async-profiler-wall.jfr");
+        let result = query_single(
+            format!(
+                "select max(startTime) from jfr_scan('{}', 'jdk.ExecutionSample')",
                 jfr.to_str().unwrap()
             )
             .as_str(),
