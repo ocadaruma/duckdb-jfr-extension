@@ -60,6 +60,7 @@ jobs:
           - build: x86_64-macos
             os: macos-latest
     steps:
+      - uses: actions/checkout@v2
       - name: Setup duckdb sources
         run: |
           make duckdb-sources
