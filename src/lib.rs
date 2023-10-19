@@ -7,8 +7,12 @@ use crate::duckdb::Database;
 
 use crate::duckdb::bindings::{duckdb_database, duckdb_library_version};
 
+use crate::duckdb::file::FileHandle;
+use flate2::read::GzDecoder;
+use jfrs::reader::JfrReader;
 use log::error;
 use std::ffi::c_char;
+use std::io::{Cursor, Read};
 
 type Result<T> = anyhow::Result<T>;
 
@@ -40,4 +44,15 @@ unsafe fn init(db: duckdb_database) -> Result<()> {
 #[no_mangle]
 pub extern "C" fn libduckdb_jfr_extension_version() -> *const c_char {
     unsafe { duckdb_library_version() }
+}
+
+fn jfr_reader(filename: &str, mut handle: FileHandle) -> Result<JfrReader<Cursor<Vec<u8>>>> {
+    let mut buf = vec![];
+    if filename.ends_with(".gz") {
+        GzDecoder::new(handle).read_to_end(&mut buf)?;
+        Ok(JfrReader::new(Cursor::new(buf)))
+    } else {
+        handle.read_to_end(&mut buf)?;
+        Ok(JfrReader::new(Cursor::new(buf)))
+    }
 }

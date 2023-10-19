@@ -9,10 +9,9 @@ use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::table_function::TableFunction;
 use crate::duckdb::value::Value;
 use crate::duckdb::view::TableFunctionView;
-use crate::Result;
+use crate::{jfr_reader, Result};
 use anyhow::anyhow;
 use jfrs::reader::type_descriptor::TypeDescriptor;
-use jfrs::reader::JfrReader;
 
 pub fn build_table_function_def() -> Result<TableFunction> {
     let table_function = TableFunction::new();
@@ -65,7 +64,8 @@ fn attach(context: duckdb_client_context, info: &FunctionInfo) -> Result<()> {
         return Ok(());
     }
 
-    let mut reader = JfrReader::new(FileHandle::open(context, bind_data.filename.as_str()));
+    let filename = bind_data.filename.as_str();
+    let mut reader = jfr_reader(filename, FileHandle::open(context, filename))?;
     if let Some(chunk) = reader.chunk_metadata().next() {
         let (_, chunk) = chunk?;
         let mut types: Vec<&TypeDescriptor> = chunk.metadata.type_pool.get_types().collect();

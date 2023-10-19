@@ -14,6 +14,7 @@ anyhow = { version = "=1.0.72", features = ["backtrace"] }
 regex = "=1.9.4"
 log = "=0.4.20"
 env_logger = "=0.10.0"
+flate2 = "=1.0.28"
 
 [build-dependencies]
 build_script = "=0.2.0"

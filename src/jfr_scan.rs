@@ -11,11 +11,11 @@ use crate::duckdb::logical_type::LogicalType;
 use crate::duckdb::table_function::TableFunction;
 use crate::duckdb::vector::Vector;
 use crate::jfr_schema::JfrField;
-use crate::Result;
+use crate::{jfr_reader, Result};
 use jfrs::reader::event::Accessor;
 use jfrs::reader::type_descriptor::{TickUnit, Unit};
 use jfrs::reader::value_descriptor::{Primitive, ValueDescriptor};
-use jfrs::reader::{Chunk, ChunkReader, JfrReader};
+use jfrs::reader::{Chunk, ChunkReader};
 use std::collections::hash_map::Entry;
 use std::ffi::CString;
 
@@ -48,7 +48,10 @@ unsafe fn bind(context: duckdb_client_context, info: &BindInfo) -> Result<()> {
     let filename = info.get_parameter(0).get_varchar().as_str()?.to_string();
     let table_name = info.get_parameter(1).get_varchar().as_str()?.to_string();
 
-    let mut reader = JfrReader::new(FileHandle::open(context, filename.as_str()));
+    let mut reader = jfr_reader(
+        filename.as_str(),
+        FileHandle::open(context, filename.as_str()),
+    )?;
     let (_, chunk) = reader
         .chunk_metadata()
         .next()
@@ -164,7 +167,7 @@ unsafe fn scan(
 
     // Read all data into memory first
     if init_data.chunk_idx < 0 {
-        let mut reader = JfrReader::new(FileHandle::open(context, filename));
+        let mut reader = jfr_reader(filename, FileHandle::open(context, filename))?;
         for chunk in reader.chunks() {
             let (r, c) = chunk?;
             init_data.chunks.push((r, c));
@@ -439,6 +442,8 @@ impl Pool {
                 .get_field("lineNumber")
                 .and_then(|l| <i32>::try_from(l.value).ok())
                 .ok_or_else(|| anyhow!("failed to get line number"))?;
+
+            // Taken from https://github.com/async-profiler/async-profiler/blob/v2.9/src/converter/jfr2flame.java#L87-L94
             let frame_string = match frame_type.as_str() {
                 "Interpreted" | "JIT compiled" | "Inlined" | "C1 compiled"
                     if !type_name.is_empty() =>
@@ -475,6 +480,22 @@ mod tests {
     fn test_count() {
         let jfr =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/async-profiler-wall.jfr");
+        let result = query1(
+            format!(
+                "select count(*) from jfr_scan('{}', 'jdk.ExecutionSample')",
+                jfr.to_str().unwrap()
+            )
+            .as_str(),
+            0,
+        )
+        .unwrap();
+        assert_eq!(428, result);
+    }
+
+    #[test]
+    fn test_gzip() {
+        let jfr =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/async-profiler-wall.jfr.gz");
         let result = query1(
             format!(
                 "select count(*) from jfr_scan('{}', 'jdk.ExecutionSample')",
