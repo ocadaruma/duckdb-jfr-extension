@@ -23,18 +23,21 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: 11
+      - name: Setup duckdb sources
+        run: |
+          make duckdb-sources
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: aarch64-apple-darwin
       - name: Test Rust
-        run:
+        run: |
           cargo test
       - name: Test Java
-        run:
+        run: |
           jdbc/gradlew test
-      - name: Save JNI lib output
+      - name: Save extension output
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v2
         with:
