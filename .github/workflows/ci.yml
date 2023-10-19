@@ -7,67 +7,115 @@ on:
   pull_request:
     branches: [master]
 jobs:
-  build:
-    name: Build extension for ${{ matrix.build }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - build: x86_64-linux
-            os: ubuntu-latest
-          - build: x86_64-macos
-            os: macos-latest
+#  build:
+#    name: Build extension for ${{ matrix.build }}
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      matrix:
+#        include:
+#          - build: x86_64-linux
+#            os: ubuntu-latest
+#          - build: x86_64-macos
+#            os: macos-latest
+#    steps:
+#      - uses: actions/checkout@v2
+#      - name: Set up JDK 11
+#        uses: actions/setup-java@v1
+#        with:
+#          java-version: 11
+#      - name: Setup duckdb sources
+#        run: |
+#          make duckdb-sources
+#      - name: Set up Rust for macos
+#        if: ${{ startsWith(matrix.os, 'macos') }}
+#        uses: actions-rs/toolchain@v1
+#        with:
+#          toolchain: stable
+#          target: aarch64-apple-darwin
+#      - name: Set up Rust for linux
+#        if: ${{ !startsWith(matrix.os, 'macos') }}
+#        uses: actions-rs/toolchain@v1
+#        with:
+#          toolchain: stable
+#      - name: Build extension
+#        run: |
+#          make loadable-extension
+#      - name: Test Java
+#        run: |
+#          cd jdbc && ./gradlew test
+#      - name: Save extension output
+#        if: startsWith(github.ref, 'refs/tags/')
+#        uses: actions/upload-artifact@v2
+#        with:
+#          name: extension-build
+#          path: build/*
+#  test-rust:
+#    name: Execute Rust test for ${{ matrix.build }}
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      matrix:
+#        include:
+#          - build: x86_64-linux
+#            os: ubuntu-latest
+#          - build: x86_64-macos
+#            os: macos-latest
+#    steps:
+#      - uses: actions/checkout@v2
+#      - name: Setup duckdb sources
+#        run: |
+#          make duckdb-sources
+#      - name: Set up Rust
+#        uses: actions-rs/toolchain@v1
+#        with:
+#          toolchain: stable
+#      - name: Test Rust
+#        run: |
+#          cargo test
+  linux-release-64:
+    # Builds binaries for linux_amd64_gcc4
+    name: Linux (x64)
+    runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux2014_x86_64
+    env:
+      EXTENSION_CONFIGS: '${GITHUB_WORKSPACE}/.github/config/bundled_extensions.cmake'
+      ENABLE_EXTENSION_AUTOLOADING: 1
+      ENABLE_EXTENSION_AUTOINSTALL: 1
+      GEN: ninja
+      BUILD_BENCHMARK: 1
+      BUILD_ODBC: 1
+      DEBUG_STACKTRACE: 1
+      FORCE_WARN_UNUSED: 1
+      DUCKDB_RUN_PARALLEL_CSV_TESTS: 1
+
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up JDK 11
-        uses: actions/setup-java@v1
+      - uses: actions/checkout@v3
         with:
-          java-version: 11
-      - name: Setup duckdb sources
+          fetch-depth: 0
+      - name: fetch submodule
         run: |
-          make duckdb-sources
-      - name: Set up Rust for macos
-        if: ${{ startsWith(matrix.os, 'macos') }}
-        uses: actions-rs/toolchain@v1
+          git submodule update --init --recursive
+      - uses: ./.github/actions/manylinux_2014_setup
         with:
-          toolchain: stable
-          target: aarch64-apple-darwin
-      - name: Set up Rust for linux
-        if: ${{ !startsWith(matrix.os, 'macos') }}
-        uses: actions-rs/toolchain@v1
+          ninja-build: 1
+          ccache: 1
+          odbc: 1
+          python_alias: 1
+      - name: Install pytest
+        run: |
+          python3.7 -m pip install pytest
+      - name: Build
+        shell: bash
+        run: make debug
+      - name: Print platform
+        shell: bash
+        run: ./build/release/duckdb -c "PRAGMA platform;"
+      - name: Deploy
+        shell: bash
+        run: |
+          python3.7 scripts/amalgamation.py
+          zip -j duckdb_cli-linux-amd64.zip build/debug/duckdb
+      - uses: actions/upload-artifact@v3
         with:
-          toolchain: stable
-      - name: Build extension
-        run: |
-          make loadable-extension
-      - name: Test Java
-        run: |
-          cd jdbc && ./gradlew test
-      - name: Save extension output
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v2
-        with:
-          name: extension-build
-          path: build/*
-  test-rust:
-    name: Execute Rust test for ${{ matrix.build }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - build: x86_64-linux
-            os: ubuntu-latest
-          - build: x86_64-macos
-            os: macos-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Setup duckdb sources
-        run: |
-          make duckdb-sources
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - name: Test Rust
-        run: |
-          cargo test
+          name: duckdb-binaries-linux
+          path: |
+            duckdb_cli-linux-amd64.zip
