@@ -501,7 +501,10 @@ mod tests {
             0, 1, 2, 3
         )
         .unwrap();
-        assert_eq!((1685952702474i64, "Async-profiler Timer".to_string(), 19, 1), result);
+        assert_eq!(
+            (1685952702474i64, "Async-profiler Timer".to_string(), 19, 1),
+            result
+        );
     }
 
     #[test]
@@ -557,20 +560,33 @@ thread_native_entry
         query(sql, |row| row.get(column_idx))
     }
 
-    fn query4<A, B, C, D>(sql: &str, col1: usize, col2: usize, col3: usize, col4: usize) -> Result<(A, B, C, D)>
-        where A: FromSql,
-              B: FromSql,
-              C: FromSql,
-              D: FromSql {
-        query(sql, |row| row.get(col1)
-            .and_then(|a| row.get(col2)
-                .and_then(|b| row.get(col3)
-                    .and_then(|c| row.get(col4)
-                        .map(|d| (a, b, c, d))))))
+    fn query4<A, B, C, D>(
+        sql: &str,
+        col1: usize,
+        col2: usize,
+        col3: usize,
+        col4: usize,
+    ) -> Result<(A, B, C, D)>
+    where
+        A: FromSql,
+        B: FromSql,
+        C: FromSql,
+        D: FromSql,
+    {
+        query(sql, |row| {
+            row.get(col1).and_then(|a| {
+                row.get(col2).and_then(|b| {
+                    row.get(col3)
+                        .and_then(|c| row.get(col4).map(|d| (a, b, c, d)))
+                })
+            })
+        })
     }
 
     fn query<T, F>(sql: &str, f: F) -> Result<T>
-        where F: FnOnce(&duckdb::Row<'_>) -> duckdb::Result<T> {
+    where
+        F: FnOnce(&duckdb::Row<'_>) -> duckdb::Result<T>,
+    {
         let db = Database::new_in_memory()?;
         let conn = db.connect()?;
         conn.register_table_function(&build_table_function_def()?)?;

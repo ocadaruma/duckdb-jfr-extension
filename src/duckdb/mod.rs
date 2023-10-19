@@ -25,6 +25,7 @@ use std::ptr::null_mut;
 pub struct Database(Ownership);
 
 enum Ownership {
+    #[allow(dead_code)]
     Owned(duckdb_database),
     Borrowed(duckdb_database),
 }
@@ -39,6 +40,7 @@ impl Ownership {
 }
 
 impl Database {
+    #[allow(dead_code)]
     pub fn new_in_memory() -> Result<Self> {
         let mut db: duckdb_database = null_mut();
         let filename = CString::new(":memory:")?;
@@ -54,6 +56,7 @@ impl Database {
         Self(Ownership::Borrowed(ptr.cast()))
     }
 
+    #[allow(dead_code)]
     pub(crate) fn ptr(&self) -> duckdb_database {
         self.0.ptr()
     }
