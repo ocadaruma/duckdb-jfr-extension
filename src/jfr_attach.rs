@@ -57,7 +57,7 @@ unsafe extern "C" fn jfr_attach_func(
     }
 }
 
-unsafe fn attach(context: duckdb_client_context, info: &FunctionInfo) -> Result<()> {
+fn attach(context: duckdb_client_context, info: &FunctionInfo) -> Result<()> {
     let mut bind_data = info
         .get_bind_data::<AttachBindData>()
         .ok_or(anyhow!("bind_data is null"))?;

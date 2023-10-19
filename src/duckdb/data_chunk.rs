@@ -1,6 +1,6 @@
 use crate::duckdb::bindings::{
-    duckdb_data_chunk, duckdb_data_chunk_get_column_count, duckdb_data_chunk_get_vector,
-    duckdb_data_chunk_set_size, duckdb_vector_size, idx_t,
+    duckdb_data_chunk, duckdb_data_chunk_get_vector, duckdb_data_chunk_set_size,
+    duckdb_vector_size, idx_t,
 };
 use crate::duckdb::vector::Vector;
 
@@ -21,9 +21,5 @@ impl DataChunk {
 
     pub fn set_size(&self, size: usize) {
         unsafe { duckdb_data_chunk_set_size(self.0, size as idx_t) };
-    }
-
-    pub fn get_column_count(&self) -> usize {
-        unsafe { duckdb_data_chunk_get_column_count(self.0) as usize }
     }
 }

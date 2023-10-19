@@ -1,7 +1,7 @@
 use crate::duckdb::bind_info::BindInfo;
 use crate::duckdb::bindings::{
     duckdb_bind_info, duckdb_client_context, duckdb_data_chunk, duckdb_function_info,
-    duckdb_init_info, duckdb_list_entry, duckdb_vector, LogicalTypeId,
+    duckdb_init_info, duckdb_list_entry, LogicalTypeId,
 };
 use crate::duckdb::data_chunk::DataChunk;
 use crate::duckdb::file::FileHandle;
@@ -217,7 +217,7 @@ unsafe fn scan(
                         &mut pool,
                     )?;
                 } else {
-                    set_null(&output.get_vector(p), row, field, &mut pool);
+                    set_null(&output.get_vector(p), row, field);
                 }
             }
             row += 1;
@@ -231,7 +231,7 @@ unsafe fn scan(
     Ok(())
 }
 
-fn set_null(vector: &Vector, row_idx: usize, field: &JfrField, pool: &mut Pool) {
+fn set_null(vector: &Vector, row_idx: usize, field: &JfrField) {
     vector.set_null(row_idx);
 
     // Struct children have their own validity bitmaps.
@@ -240,7 +240,7 @@ fn set_null(vector: &Vector, row_idx: usize, field: &JfrField, pool: &mut Pool) 
     // refs: https://arrow.apache.org/docs/12.0/format/Columnar.html#struct-validity
     if !field.children.is_empty() && !field.is_array {
         for (i, s) in field.children.iter().filter(|s| s.valid).enumerate() {
-            set_null(&vector.get_struct_child(i), row_idx, s, pool);
+            set_null(&vector.get_struct_child(i), row_idx, s);
         }
     }
 }
@@ -302,7 +302,7 @@ fn populate_column(
             Primitive::Boolean(v) => vector.set_data(row_idx, *v),
             Primitive::Short(v) => vector.set_data(row_idx, *v),
             Primitive::Byte(v) => vector.set_data(row_idx, *v),
-            Primitive::NullString => set_null(vector, row_idx, field, pool),
+            Primitive::NullString => set_null(vector, row_idx, field),
             Primitive::String(s) => {
                 vector.assign_string_element_len(row_idx, s.string.as_ptr(), s.len);
             }
@@ -353,15 +353,10 @@ fn populate_column(
             vector.set_list_size(child_offset + arr.len());
         }
         _ => {
-            set_null(vector, row_idx, field, pool);
+            set_null(vector, row_idx, field);
         }
     }
     Ok(())
-}
-
-unsafe fn assign<T>(vector: duckdb_vector, row_idx: usize, value: T) {
-    let vector = Vector::from_ptr(vector);
-    vector.get_data::<T>().add(row_idx).write(value);
 }
 
 struct ScanInitData {
@@ -480,7 +475,7 @@ mod tests {
     fn test_count() {
         let jfr =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/async-profiler-wall.jfr");
-        let result = query_single(
+        let result = query1(
             format!(
                 "select count(*) from jfr_scan('{}', 'jdk.ExecutionSample')",
                 jfr.to_str().unwrap()
@@ -496,23 +491,24 @@ mod tests {
     fn test_all_field() {
         let jfr =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/async-profiler-wall.jfr");
-        let result = query_single(
+        let result = query4(
             format!(
-                "select max(startTime) from jfr_scan('{}', 'jdk.ExecutionSample')",
+                "select epoch_ms(max(startTime)), min(sampledThread.osName), count(distinct stackTrace), count(distinct state.name)\
+                 from jfr_scan('{}', 'jdk.ExecutionSample')",
                 jfr.to_str().unwrap()
             )
             .as_str(),
-            0,
+            0, 1, 2, 3
         )
         .unwrap();
-        assert_eq!(428, result);
+        assert_eq!((1685952702474i64, "Async-profiler Timer".to_string(), 19, 1), result);
     }
 
     #[test]
     fn test_multiple_chunks() {
         let jfr =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-multichunk.jfr");
-        let result = query_single(
+        let result = query1(
             format!(
                 "select count(*) from jfr_scan('{}', 'jdk.ExecutionSample')",
                 jfr.to_str().unwrap()
@@ -557,13 +553,30 @@ thread_native_entry
         assert_eq!(expected, cstr.to_str().unwrap());
     }
 
-    fn query_single<T: FromSql>(sql: &str, column_idx: usize) -> Result<T> {
+    fn query1<A: FromSql>(sql: &str, column_idx: usize) -> Result<A> {
+        query(sql, |row| row.get(column_idx))
+    }
+
+    fn query4<A, B, C, D>(sql: &str, col1: usize, col2: usize, col3: usize, col4: usize) -> Result<(A, B, C, D)>
+        where A: FromSql,
+              B: FromSql,
+              C: FromSql,
+              D: FromSql {
+        query(sql, |row| row.get(col1)
+            .and_then(|a| row.get(col2)
+                .and_then(|b| row.get(col3)
+                    .and_then(|c| row.get(col4)
+                        .map(|d| (a, b, c, d))))))
+    }
+
+    fn query<T, F>(sql: &str, f: F) -> Result<T>
+        where F: FnOnce(&duckdb::Row<'_>) -> duckdb::Result<T> {
         let db = Database::new_in_memory()?;
         let conn = db.connect()?;
         conn.register_table_function(&build_table_function_def()?)?;
         let conn = unsafe { Connection::open_from_raw(db.ptr().cast())? };
 
-        let result: duckdb::Result<T> = conn.query_row(sql, [], |row| row.get(column_idx));
+        let result: duckdb::Result<T> = conn.query_row(sql, [], f);
         Ok(result?)
     }
 }
