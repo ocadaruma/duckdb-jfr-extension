@@ -93,6 +93,7 @@ jobs:
           fetch-depth: 0
       - name: fetch submodule
         run: |
+          git config --global --add safe.directory '*'
           git submodule update --init --recursive
       - uses: ./.github/actions/manylinux_2014_setup
         with:
