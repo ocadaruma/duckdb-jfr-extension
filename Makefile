@@ -8,21 +8,20 @@ duckdb-sources:
 submodules:
 	git submodule update --init --recursive
 
-.PHONY: loadable-extension-debug
-loadable-extension-debug: duckdb-sources
-	cargo rustc
+.PHONY: loadable-extension
+loadable-extension: duckdb-sources
+	./build-extension.sh
 
-.PHONY: loadable-extension-release
-loadable-extension-release: duckdb-sources
-	cargo rustc --release
-
-.PHONY: wasm-debug
-wasm-debug: duckdb-sources submodules
-	cargo rustc --target wasm32-unknown-emscripten --no-default-features --crate-type staticlib
-
-.PHONY: wasm-release
-wasm-release: duckdb-sources submodules
+.PHONY: wasm
+wasm: duckdb-sources submodules
 	cargo rustc --release --target wasm32-unknown-emscripten --no-default-features --crate-type staticlib
+
+.PHONY: duckdb-wasm
+duckdb-wasm: wasm
+	$(MAKE) -C $(PROJECT_DIR)/wasm/duckdb-wasm \
+		DUCKDB_SKIP_BUILD_EH=1 DUCKDB_SKIP_BUID_COI=1 \
+		CUSTOM_EXTENSION_DIRS=$(PROJECT_DIR)/wasm \
+		wasm wasmpack js_release
 
 .PHONY: fmt
 fmt:
@@ -31,9 +30,11 @@ fmt:
 	cargo clippy --no-default-features
 
 .PHONY: test
-test:
+test: loadable-extension
 	cargo test
+	cd $(PROJECT_DIR)/jdbc && ./gradlew test
 
 .PHONY: clean
 clean:
 	cargo clean
+	cd $(PROJECT_DIR)/jdbc && ./gradlew clean
