@@ -37,7 +37,7 @@ case $(uname -s) in
         ;;
     esac
     cargo rustc --release --target $target
-    cp -f target/$target/release/libduckdb_jfr_extension.so $out_dir/$filename
+    cp -f target/$target/release/libduckdb_jfr_extension.so $out_dir/$FILENAME
     ;;
   *)
     echo "Unsupported OS: $(uname -s)" >&2
