@@ -101,7 +101,7 @@ jobs:
 #        run: |
 #          cd jdbc && ./gradlew test
       - name: Save extension output
-        if: startsWith(github.ref, 'refs/tags/')
+#        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v2
         with:
           name: extension-build
