@@ -93,10 +93,10 @@ jobs:
           toolchain: stable
       - name: Setup dependencies
         run: |
-          yum install -y clang
+          yum install -y llvm-toolset-7
       - name: Build extension
         run: |
-          make loadable-extension
+          scl enable llvm-toolset-7 'make loadable-extension'
 #      - name: Test Java
 #        run: |
 #          cd jdbc && ./gradlew test
