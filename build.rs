@@ -46,17 +46,13 @@ fn main() {
         cargo_rerun_if_changed(source);
     }
 
-    // We use same flags as in libduckdb-sys basically
     cc::Build::new()
         .includes(include_dirs)
         .files(cpp_files)
         .flag_if_supported("-std=c++11")
-        .flag_if_supported("-stdlib=libc++")
-        // .flag_if_supported("-stdlib=libstdc++") // Except this. If we specify this, em++ spits an error
-        .flag_if_supported("/bigobj")
-        .flag_if_supported("-w")
         // https://discord.com/channels/909674491309850675/921100573732909107/1110164344525832192
         .define("NDEBUG", None)
+        .define("_GLIBCXX_USE_CXX11_ABI", Some("1"))
         .warnings(false)
         .cpp(true)
         .compile("duckdb-cc");
