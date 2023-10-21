@@ -46,6 +46,8 @@ jobs:
           java-version: 11
       - name: Set up Rust for linux
         uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
       - name: Setup dependencies
         # install llvm-toolset-7 for libclang which is required by bindgen
         run: yum install -y llvm-toolset-7
@@ -60,7 +62,7 @@ jobs:
           name: extension-build
           path: build/*
   test-rust:
-    name: Execute Rust test for ${{ matrix.build }}
+    name: Execute Rust test for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
