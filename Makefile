@@ -10,7 +10,7 @@ submodules:
 
 .PHONY: loadable-extension
 loadable-extension: duckdb-sources
-	./build-extension.sh
+	CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" ./build-extension.sh
 
 .PHONY: wasm
 wasm: duckdb-sources submodules

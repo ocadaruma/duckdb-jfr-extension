@@ -1,4 +1,4 @@
-use build_script::cargo_rerun_if_changed;
+use build_script::{cargo_rerun_if_changed, cargo_rustc_link_lib};
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -37,14 +37,15 @@ fn main() {
     let bridge_sources = ["src/bridge.cpp", "src/bridge_table_function.cpp"];
     cpp_files.extend(bridge_sources.iter().map(PathBuf::from));
 
-    #[cfg(feature = "build-duckdb")]
-    build_duckdb::configure(&duckdb_sources, &mut cpp_files, &mut include_dirs);
+    // #[cfg(feature = "build-duckdb")]
+    // build_duckdb::configure(&duckdb_sources, &mut cpp_files, &mut include_dirs);
 
     cargo_rerun_if_changed(&duckdb_include);
     cargo_rerun_if_changed(bridge_header);
     for source in bridge_sources {
         cargo_rerun_if_changed(source);
     }
+    cargo_rustc_link_lib("duckdb");
 
     cc::Build::new()
         .includes(include_dirs)
@@ -52,7 +53,7 @@ fn main() {
         .flag_if_supported("-std=c++11")
         // https://discord.com/channels/909674491309850675/921100573732909107/1110164344525832192
         .define("NDEBUG", None)
-        .define("_GLIBCXX_USE_CXX11_ABI", Some("1"))
+        .define("_GLIBCXX_USE_CXX11_ABI", Some("0"))
         .warnings(false)
         .cpp(true)
         .compile("duckdb-cc");
