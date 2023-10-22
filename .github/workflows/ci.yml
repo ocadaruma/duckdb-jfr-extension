@@ -117,7 +117,7 @@ jobs:
         shell: bash
         run: |
           cd build
-          tar -czf ${{ matrix.target }}.tar.gz {{ matrix.target }}
+          tar -czf ${{ matrix.target }}.tar.gz ${{ matrix.target }}
       - name: Upload release asset
         uses: actions/upload-release-asset@v1
         env:
