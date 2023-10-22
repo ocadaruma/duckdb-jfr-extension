@@ -74,7 +74,17 @@ public class DuckDBJfrConnection implements AutoCloseable {
      * Create a new in-memory DuckDB connection with JFR-extension preloaded.
      */
     public static DuckDBJfrConnection inMemoryConnection() throws SQLException {
+        return inMemoryConnection(null);
+    }
+
+    /**
+     * Create a new in-memory DuckDB connection with JFR-extension preloaded.
+     */
+    public static DuckDBJfrConnection inMemoryConnection(Properties properties) throws SQLException {
         Properties props = new Properties();
+        if (properties != null) {
+            props.putAll(properties);
+        }
         props.setProperty("allow_unsigned_extensions", "true");
 
         Connection conn = DriverManager.getConnection("jdbc:duckdb:", props);

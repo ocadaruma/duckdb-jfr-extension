@@ -27,7 +27,7 @@ tasks.processResources {
 }
 
 dependencies {
-    implementation("org.duckdb:duckdb_jdbc:0.9.1")
+    runtimeOnly("org.duckdb:duckdb_jdbc:0.9.1")
     testImplementation(platform("org.junit:junit-bom:5.9.1"))
     testImplementation("org.junit.jupiter:junit-jupiter")
 }
@@ -69,8 +69,6 @@ publishing {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
             artifactId = project.name
-            artifact(tasks["sourcesJar"])
-            artifact(tasks["javadocJar"])
             pom {
                 name = "DuckDB JFR JDBC"
                 description = "JFR support for DuckDB JDBC Driver"
