@@ -81,3 +81,49 @@ jobs:
       - name: Test Rust
         run: |
           cargo test
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-macos, build-linux-amd64, test-rust]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+    outputs:
+      releaseUploadUrl: ${{ steps.create_release.outputs.upload_url }}
+  release-binary:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: osx-universal
+          - target: linux-amd64
+    steps:
+      - uses: actions/checkout@v2
+      - name: Restore extensions
+        uses: actions/download-artifact@v2
+        with:
+          name: extension-build
+          path: build
+      - name: Compress the artifact
+        shell: bash
+        run: |
+          cd build
+          tar -czf ${{ matrix.target }}.tar.gz {{ matrix.target }}
+      - name: Upload release asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.release.outputs.releaseUploadUrl }}
+          asset_path: build/${{ matrix.target }}.tar.gz
+          asset_name: duckdb-jfr-extension-${{ matrix.target }}.tar.gz
+          asset_content_type: application/octet-stream
