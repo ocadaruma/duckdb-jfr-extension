@@ -26,27 +26,27 @@ public class DuckDBJfrConnection implements AutoCloseable {
             String arch = System.getProperty("os.arch").toLowerCase().trim();
             String os = System.getProperty("os.name").toLowerCase().trim();
 
-            switch (arch) {
-                case "x86_64":
-                case "amd64":
-                    arch = "amd64";
-                    break;
-                case "aarch64":
-                case "arm64":
-                    arch = "arm64";
-                    break;
-                default:
-                    throw new RuntimeException("Unsupported architecture: " + arch);
-            }
             if (os.startsWith("mac")) {
                 os = "osx";
                 arch = "universal";
             } else if (os.startsWith("linux")) {
                 os = "linux";
+                switch (arch) {
+                    case "x86_64":
+                    case "amd64":
+                        arch = "amd64";
+                        break;
+                    case "aarch64":
+                    case "arm64":
+                        arch = "arm64";
+                        break;
+                    default:
+                        throw new RuntimeException("Unsupported architecture: " + arch);
+                }
             } else {
                 throw new RuntimeException("Unsupported OS: " + os);
             }
-            String resourceName = String.format("libduckdb_jfr_extension_%s-%s.so", os, arch);
+            String resourceName = String.format("%s-%s/libduckdb_jfr_extension.so", os, arch);
             extensionPath = extractExtension(resourceName);
         } catch (ClassNotFoundException e) {
             throw new RuntimeException(e);
@@ -74,7 +74,17 @@ public class DuckDBJfrConnection implements AutoCloseable {
      * Create a new in-memory DuckDB connection with JFR-extension preloaded.
      */
     public static DuckDBJfrConnection inMemoryConnection() throws SQLException {
+        return inMemoryConnection(null);
+    }
+
+    /**
+     * Create a new in-memory DuckDB connection with JFR-extension preloaded.
+     */
+    public static DuckDBJfrConnection inMemoryConnection(Properties properties) throws SQLException {
         Properties props = new Properties();
+        if (properties != null) {
+            props.putAll(properties);
+        }
         props.setProperty("allow_unsigned_extensions", "true");
 
         Connection conn = DriverManager.getConnection("jdbc:duckdb:", props);
