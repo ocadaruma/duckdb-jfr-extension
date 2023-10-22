@@ -19,7 +19,7 @@ wasm: duckdb-sources submodules
 .PHONY: duckdb-wasm
 duckdb-wasm: wasm
 	$(MAKE) -C $(PROJECT_DIR)/wasm/duckdb-wasm \
-		DUCKDB_SKIP_BUILD_EH=1 DUCKDB_SKIP_BUID_COI=1 \
+		DUCKDB_SKIP_BUILD_EH=1 DUCKDB_SKIP_BUILD_COI=1 \
 		CUSTOM_EXTENSION_DIRS=$(PROJECT_DIR)/wasm \
 		wasm wasmpack js_release
 
