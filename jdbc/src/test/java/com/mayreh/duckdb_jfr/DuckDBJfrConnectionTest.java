@@ -31,4 +31,27 @@ public class DuckDBJfrConnectionTest {
             }
         }
     }
+
+    @Test
+    void testMultipleTimes() throws Exception {
+        for (int i = 0; i < 2; i++) {
+            try (DuckDBJfrConnection conn = DuckDBJfrConnection.inMemoryConnection();
+                 InputStream is = DuckDBJfrConnectionTest.class
+                         .getClassLoader()
+                         .getResourceAsStream("async-profiler-wall.jfr")) {
+                Path file = Files.createTempFile("", ".jfr");
+                Files.copy(is, file, StandardCopyOption.REPLACE_EXISTING);
+
+                conn.attach(file);
+                conn.attach(file);
+                try (Statement stmt = conn.connection().createStatement()) {
+                    stmt.execute("select count(*) from \"jdk.ExecutionSample\"");
+                    ResultSet rs = stmt.getResultSet();
+                    rs.next();
+
+                    assertEquals(428, rs.getInt(1));
+                }
+            }
+        }
+    }
 }

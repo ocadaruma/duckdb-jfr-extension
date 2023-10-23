@@ -25,7 +25,7 @@ type Result<T> = anyhow::Result<T>;
 #[no_mangle]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn libduckdb_jfr_extension_init(db: duckdb_database) {
-    env_logger::init();
+    let _ = env_logger::try_init();
 
     let res = init(db);
     if let Err(err) = res {
