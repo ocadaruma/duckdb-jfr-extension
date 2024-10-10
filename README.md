@@ -29,7 +29,7 @@ This project is highly inspired by [jfr-analytics](https://github.com/moditect/j
 ```bash
 $ /path/to/duckdb -unsigned
 D load '/path/to/libduckdb_jfr_extension.so';
-D jfr_attach('/path/to/your.jfr');
+D call jfr_attach('/path/to/your.jfr');
 D show tables;
 ┌─────────────────────────────────┐
 │              name               │
