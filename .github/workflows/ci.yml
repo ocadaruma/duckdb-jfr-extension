@@ -34,7 +34,7 @@ jobs:
           path: build/*
   build-linux-amd64:
     name: Build extension for linux-amd64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     # We build the extension in the container which is same as the one used for
     # duckdb build as of 0.9.1 to avoid any compatibility issues as much as possible
     container: quay.io/pypa/manylinux2014_x86_64
@@ -67,7 +67,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
           - os: macos-latest
     steps:
       - uses: actions/checkout@v2
@@ -84,7 +84,7 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [build-macos, build-linux-amd64, test-rust]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2
       - name: Create release
@@ -100,7 +100,7 @@ jobs:
   release-binary:
     if: startsWith(github.ref, 'refs/tags/')
     needs: release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         include:
