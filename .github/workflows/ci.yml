@@ -19,9 +19,7 @@ jobs:
       - name: Set up Rust for macos
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          # we need only aarch64 since x86 target is installed by default
-          target: aarch64-apple-darwin
+          target: x86_64-apple-darwin,aarch64-apple-darwin
       - name: Build extension
         run: make loadable-extension
       - name: Test Java
@@ -47,7 +45,11 @@ jobs:
         with:
           java-version: 11
       - name: Set up Rust for linux
-        uses: dtolnay/rust-toolchain@stable
+        # We stick with deprecated actions-rs/toolchain@v1 for now since
+        # the curl version installed on this container image is too old to run dtolnay/rust-toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
       - name: Setup dependencies
         # install llvm-toolset-7 for libclang which is required by bindgen
         run: yum install -y llvm-toolset-7
